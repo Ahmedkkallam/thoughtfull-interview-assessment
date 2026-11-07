@@ -4,16 +4,18 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node src/server.ts",
+    "start": "node --env-file-if-exists=../../.env src/server.ts",
     "db:generate": "drizzle-kit generate",
     "db:custom": "drizzle-kit generate --custom",
-    "db:migrate": "node src/db/migrate.ts"
+    "db:migrate": "node --env-file-if-exists=../../.env src/db/migrate.ts"
   },
   "dependencies": {
+    "@fastify/cookie": "11.1.5",
     "@thoughtfull/domain": "0.0.0",
     "drizzle-orm": "0.45.4",
     "fastify": "5.12.8",
-    "pg": "8.23.1"
+    "pg": "8.23.1",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/pg": "8.23.1",
