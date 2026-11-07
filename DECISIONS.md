@@ -31,6 +31,13 @@ _To be written as the reminder worker lands._
 ## The 24-hour rule
 - **D12** "Up to 24 hours before" is inclusive: exactly 24 h before the start is allowed, 1 ms later is blocked. It is checked on the server with the server clock, never in the browser.
 
+## Sign-in and identity
+- **D13 Server-side sessions, not JWT.** Login sets a random 32-byte token in an httpOnly, SameSite=Lax cookie (Secure in production) that expires after 7 days. Only its sha256 is stored, so a copy of the table cannot be replayed. Logout deletes the row, so the token stops working immediately; a stateless JWT would stay valid until it expired.
+- **D14 Who is asking** comes only from that cookie, on every request. No route reads a user id from the body, query or URL for identity; zod drops unknown body fields.
+- **D15 Passwords** use scrypt (N=2^15, r=8, p=1, 16-byte salt), built into Node, so there is no native build on Windows. The parameters are stored with each hash, so they can be raised later. argon2id is the modern first choice; it needs a native module.
+- **D16 Login errors** are the same for an unknown email and a wrong password, and both take the same hashing time, so the login form does not reveal who has an account.
+- **D17 Timezones** must be IANA names. Aliases browsers send (Asia/Kolkata) are accepted; raw offsets (+05:00) are refused, because an offset cannot follow daylight saving.
+
 ## Assumptions (open questions in the brief)
 _To be written._
 
