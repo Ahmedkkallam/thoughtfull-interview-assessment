@@ -1,0 +1,21 @@
+{
+  "name": "thoughtfull",
+  "private": true,
+  "type": "module",
+  "workspaces": ["apps/*", "packages/*"],
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "test": "docker compose --profile test up -d --wait db-test && vitest run",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "npm run db:migrate -w apps/api"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.19.2",
+    "eslint": "10.14.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vitest": "5.1.0"
+  }
+}
