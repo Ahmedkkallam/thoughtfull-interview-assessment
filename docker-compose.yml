@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: thoughtfull
+      POSTGRES_PASSWORD: thoughtfull
+      POSTGRES_DB: thoughtfull
+    ports:
+      - "54320:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U thoughtfull -d thoughtfull"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Throwaway database for tests: data lives in memory and vanishes on down.
+  db-test:
+    profiles: ["test"]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: thoughtfull
+      POSTGRES_PASSWORD: thoughtfull
+      POSTGRES_DB: thoughtfull_test
+    ports:
+      - "54329:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U thoughtfull -d thoughtfull_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  db-data:

@@ -1,0 +1,22 @@
+{
+  "name": "@thoughtfull/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:custom": "drizzle-kit generate --custom",
+    "db:migrate": "node src/db/migrate.ts"
+  },
+  "dependencies": {
+    "@thoughtfull/domain": "0.0.0",
+    "drizzle-orm": "0.45.4",
+    "fastify": "5.12.8",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1",
+    "drizzle-kit": "0.31.11"
+  }
+}
