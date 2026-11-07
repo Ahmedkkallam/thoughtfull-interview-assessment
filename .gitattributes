@@ -1,0 +1,5 @@
+# Keep LF in the repo so scripts and diffs behave the same on Windows, Mac and Linux.
+* text=auto eol=lf
+*.pdf binary
+*.png binary
+*.jpg binary
