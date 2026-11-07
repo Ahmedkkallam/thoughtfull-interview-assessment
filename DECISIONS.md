@@ -15,7 +15,21 @@ _To be written as the booking code lands._
 _To be written as the reminder worker lands._
 
 ## Timezones and daylight saving
-_To be written as slot generation lands._
+- **D5 Storage.** Every moment (session start and end, reminder due time) is stored as UTC `timestamptz` and exchanged as ISO-8601 UTC. Working hours are stored as local wall-clock times ("Mon 09:00–17:00") plus the professional's IANA zone (`Europe/London`), never as an offset: an offset is wrong for half the year.
+- **D6 Slot generation** (`packages/domain/src/slots.ts`) walks the professional's local calendar days and builds each candidate time with Luxon in their zone, so "09:00 London" becomes 09:00Z in winter and 08:00Z in summer automatically.
+  - **Clocks go forward** (a local time does not exist, e.g. 02:00 in New York on 2027-03-14): that slot is skipped, not moved to 03:00, because moving it could collide with the real 03:00 slot.
+  - **Clocks go back** (a local time happens twice, e.g. 01:00 in New York on 2026-11-01): it is offered once, at its second occurrence (standard time, 06:00Z), which is what Luxon resolves to. A test pins this, so a library change would be caught.
+  - Session length is 50 **absolute** minutes, even across a change.
+- **D7 Display.** Slots and sessions are shown in the viewer's **account** timezone (chosen at sign-up), not the browser's, and the zone is named on screen. Slots are grouped by the viewer's local date: a London Monday 16:00 slot appears on Tuesday 00:00 for a member in Singapore.
+- **D8 Rules count real hours.** The 24-hour rule and both reminders use absolute time: "24 hours before" a Sunday 10:00 BST session on the day the clocks go forward is Saturday 09:00 UTC, not "the same wall-clock time yesterday".
+
+## Slot layout
+- **D9** Sessions start on the hour from the start of each working range and last 50 minutes, leaving a 10-minute buffer before the next. A range that does not fit a whole session at the end drops that partial slot (09:00–17:30 offers 09:00…16:00). Back-to-back 50-minute slots were rejected: start times drift (09:50, 10:40, …) and leave the professional no break.
+- **D10** The booking window is `[now, now + 28 days)` in absolute time, using the server clock. It is the same for every viewer, whatever their timezone.
+- **D11** A professional may have several ranges per day (a lunch break), but a range cannot cross midnight. This keeps each range on one local date, so DST handling stays per day. Overlapping ranges on the same day are rejected.
+
+## The 24-hour rule
+- **D12** "Up to 24 hours before" is inclusive: exactly 24 h before the start is allowed, 1 ms later is blocked. It is checked on the server with the server clock, never in the browser.
 
 ## Assumptions (open questions in the brief)
 _To be written._
