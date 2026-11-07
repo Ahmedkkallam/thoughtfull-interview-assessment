@@ -1,3 +1,4 @@
+import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
@@ -19,7 +20,15 @@ export default defineConfig({
           fileParallelism: false,
         },
       },
-      // Add a "web" project here (jsdom) when apps/web exists.
+      {
+        plugins: [react()],
+        test: {
+          name: "web",
+          root: "apps/web",
+          environment: "jsdom",
+          include: ["src/**/*.test.{ts,tsx}"],
+        },
+      },
     ],
   },
 });

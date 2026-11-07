@@ -2,12 +2,18 @@
   "name": "thoughtfull",
   "private": true,
   "type": "module",
-  "workspaces": ["apps/*", "packages/*"],
-  "engines": { "node": ">=24" },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "test": "docker compose --profile test up -d --wait db-test && vitest run",
+    "dev": "node scripts/dev.js",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p apps/web",
     "db:migrate": "npm run db:migrate -w apps/api"
   },
   "devDependencies": {
