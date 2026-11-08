@@ -80,6 +80,12 @@ async function count(sql: string, params: unknown[] = []): Promise<number> {
   return rows[0].n;
 }
 
+// Waits until `n` connections are blocked on a row lock, so a test can line up an exact interleaving.
+async function lockWaiters(n: number) {
+  const sql = "SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'";
+  while ((await pool.query(sql)).rows[0].n < n) await new Promise((r) => setTimeout(r, 10));
+}
+
 const bookedOf = (who: User) => count("sessions WHERE member_id = $1 AND status = 'booked'", [who.id]);
 const pendingReminders = (sessionId: string) =>
   count("reminders WHERE session_id = $1 AND delivered_at IS NULL AND cancelled_at IS NULL", [sessionId]);
@@ -351,6 +357,18 @@ describe("rescheduling a session", () => {
     expect((await sessionRow(old.id)).status).toBe("booked");
   });
 
+  it("answers 422 to moving a session to the time it already has, and changes nothing", async () => {
+    const mira = await professional();
+    const leo = await member();
+    const s = await bookAhead(leo, mira);
+    const res = await reschedule(leo, s.id, s.startsAt);
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error).toEqual({ code: "SAME_TIME", message: "That is already the time of this session." });
+    expect(await sessionRow(s.id)).toMatchObject({ status: "booked" });
+    expect(await count("sessions")).toBe(1);
+    expect(await notificationsOf(mira)).toEqual([]);
+  });
+
   it("answers 409 to rescheduling a session that was already moved", async () => {
     const mira = await professional();
     const leo = await member();
@@ -454,5 +472,80 @@ describe("access to cancel and reschedule", () => {
     for (const startsAt of [undefined, "tomorrow"]) {
       expect((await reschedule(leo, s.id, startsAt as unknown as string)).statusCode).toBe(400);
     }
+  });
+});
+
+describe("the reminder worker and a change to the same session at the same moment", () => {
+  // The worker locks a batch of reminders, then inserts their notifications, whose foreign key takes
+  // a light (KEY SHARE) lock on each session. A cancel locks the session, then updates its reminders.
+  // If the cancel's session lock blocked that light lock, each would wait for the other: a deadlock.
+  // To force that order, two other people have an earlier session, so its reminders come first in the
+  // worker's batch, and the test holds those two people's rows: the worker stops right after claiming.
+  async function workerHeldAfterClaiming(workerNow: (s: Booked) => Date) {
+    const ravi = await professional("Dr. Ravi Menon");
+    const ana = await member("Ana Silva");
+    const mira = await professional();
+    const leo = await member();
+    const [early] = await slotsAhead(ana, ravi, 30);
+    expect((await book(ana, ravi, early!.startsAt)).statusCode).toBe(201);
+    const [slot, , later] = (await slotsAhead(leo, mira, 30)).filter((x) => x.startsAt > early!.startsAt);
+    const s: Booked = (await book(leo, mira, slot!.startsAt)).json();
+
+    const holder = await pool.connect();
+    await holder.query("BEGIN");
+    await holder.query("SELECT 1 FROM users WHERE id = ANY($1) FOR UPDATE", [[ana.id, ravi.id]]);
+    const worker = deliverDueReminders(db, workerNow(s));
+    await lockWaiters(1);
+    const release = async () => {
+      await holder.query("ROLLBACK");
+      holder.release();
+    };
+    return { mira, leo, s, later: later!, worker, release };
+  }
+
+  async function remindersOf(sessionId: string) {
+    const { rows } = await pool.query(
+      `SELECT kind, delivered_at IS NOT NULL AS delivered, cancelled_at IS NOT NULL AS cancelled
+       FROM reminders WHERE session_id = $1 ORDER BY kind`,
+      [sessionId],
+    );
+    return rows;
+  }
+
+  const deliveredDayBefore = [
+    { kind: "1h", delivered: false, cancelled: true },
+    { kind: "1h", delivered: false, cancelled: true },
+    { kind: "24h", delivered: true, cancelled: false },
+    { kind: "24h", delivered: true, cancelled: false },
+  ];
+
+  it("cancels a session while the worker is delivering its reminders, without a deadlock", async () => {
+    const { mira, leo, s, worker, release } = await workerHeldAfterClaiming((s) => at(s, -24 * HOUR + MINUTE));
+    pinned = at(s, -24 * HOUR + 2 * MINUTE);
+    const cancelled = cancel(mira, s.id);
+    // The cancel now waits for the reminders the worker holds.
+    await lockWaiters(2);
+    await release();
+
+    const [res, delivered] = await Promise.all([cancelled, worker]);
+    expect(res.statusCode).toBe(200);
+    expect(delivered).toBe(4);
+    // The reminder already sent stays sent; the one still waiting is cancelled.
+    expect(await remindersOf(s.id)).toEqual(deliveredDayBefore);
+    expect((await notificationsOf(leo)).map((n) => n.kind).sort()).toEqual(["reminder_24h", "session_cancelled"]);
+  });
+
+  it("reschedules a session while the worker is delivering its reminders, without a deadlock", async () => {
+    const { leo, s, later, worker, release } = await workerHeldAfterClaiming((s) => at(s, -24 * HOUR));
+    pinned = at(s, -24 * HOUR);
+    const moved = reschedule(leo, s.id, later.startsAt);
+    await lockWaiters(2);
+    await release();
+
+    const [res, delivered] = await Promise.all([moved, worker]);
+    expect(res.statusCode).toBe(201);
+    expect(delivered).toBe(4);
+    expect(await remindersOf(s.id)).toEqual(deliveredDayBefore);
+    expect(await pendingReminders(res.json().id)).toBe(4);
   });
 });

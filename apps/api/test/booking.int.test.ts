@@ -277,7 +277,7 @@ describe("my sessions", () => {
     ]);
   });
 
-  it("shows a professional their own schedule with member names and no emails", async () => {
+  it("shows a professional their own schedule with only member names: no ids, timezones or emails", async () => {
     const mira = await professional();
     const ravi = await professional("Dr. Ravi Menon");
     const leo = await member();
@@ -291,7 +291,8 @@ describe("my sessions", () => {
     expect(res.statusCode).toBe(200);
     // Sorted soonest first.
     expect(res.json().map((s: { counterpart: { name: string } }) => s.counterpart.name)).toEqual(["Leo Tanaka", "Ana Silva"]);
-    expect(res.json()[0].counterpart).toEqual({ id: leo.id, name: "Leo Tanaka", timezone: "Asia/Singapore" });
+    // Only the name: a professional has no use for a member's id or timezone.
+    expect(res.json()[0].counterpart).toEqual({ name: "Leo Tanaka" });
     expect(res.body).not.toContain("@example.test");
   });
 

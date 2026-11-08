@@ -6,6 +6,7 @@ import { requireRole } from "../auth/guards.ts";
 import type { Db } from "../db/client.ts";
 import { workingHours } from "../db/schema.ts";
 import { HttpError } from "../errors.ts";
+import { lockPeople } from "../sessions/writes.ts";
 
 // Only the shape is checked here; weekday range, time format, overlaps and midnight are validateWeek's job.
 const putBody = z.object({
@@ -27,6 +28,8 @@ export async function getWorkingHours(db: Db, professionalId: string): Promise<W
 // Delete + insert in one transaction: a failed insert rolls back, so the old week is never half-replaced.
 export async function replaceWorkingHours(db: Db, professionalId: string, hours: WorkingHours[]) {
   await db.transaction(async (tx) => {
+    // Two saves at once take turns here; otherwise each delete misses the other's new rows and the weeks merge.
+    await lockPeople(tx, [professionalId]);
     await tx.delete(workingHours).where(eq(workingHours.professionalId, professionalId));
     if (hours.length > 0) {
       await tx

@@ -20,6 +20,12 @@ const get = (token: string) => app.inject({ method: "GET", url: "/api/availabili
 const put = (token: string, hours: unknown) =>
   app.inject({ method: "PUT", url: "/api/availability", cookies: { session: token }, payload: { hours } });
 
+// Waits until `n` connections are blocked on a row lock, so a test can line up an exact interleaving.
+async function lockWaiters(n: number) {
+  const sql = "SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'";
+  while ((await pool.query(sql)).rows[0].n < n) await new Promise((r) => setTimeout(r, 10));
+}
+
 beforeEach(async () => {
   await pool.query("TRUNCATE users, auth_sessions, working_hours CASCADE");
 });
@@ -151,5 +157,22 @@ describe("availability", () => {
       ]),
     ).rejects.toThrow();
     expect((await get(token)).json()).toEqual(saved);
+  });
+
+  it("keeps exactly one of two weeks saved at the same moment, never a mix of both", async () => {
+    const { id, token } = await signup(mira);
+    const mondays = [{ weekday: 1, start: "09:00", end: "12:00" }];
+    const tuesdays = [{ weekday: 2, start: "13:00", end: "17:00" }];
+    // Holding the professional's row stops both saves at their first touch of it, then frees them together.
+    const holder = await pool.connect();
+    await holder.query("BEGIN");
+    await holder.query("SELECT 1 FROM users WHERE id = $1 FOR UPDATE", [id]);
+    const saves = [put(token, mondays), put(token, tuesdays)];
+    await lockWaiters(2);
+    await holder.query("ROLLBACK");
+    holder.release();
+
+    expect((await Promise.all(saves)).map((r) => r.statusCode)).toEqual([200, 200]);
+    expect([mondays, tuesdays]).toContainEqual((await get(token)).json());
   });
 });

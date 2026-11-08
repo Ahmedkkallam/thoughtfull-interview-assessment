@@ -42,7 +42,10 @@ export function sessionRoutes(app: FastifyInstance, { db, clock }: { db: Db; clo
     const me = req.user!;
     const now = clock.now();
     const row = await db.transaction(async (tx) => {
-      // FOR UPDATE: a racing cancel or reschedule of this session waits here, then sees the new status.
+      // A racing cancel or reschedule of this session waits here, then sees the new status.
+      // NO KEY UPDATE, not UPDATE: the reminder worker, holding this session's reminders, inserts
+      // notifications whose foreign key takes a light lock on this row. UPDATE would block that while
+      // this cancel waits for those reminders: a deadlock. The status change needs no stronger lock.
       const [s] = await tx
         .select({
           id: sessions.id,
@@ -53,7 +56,7 @@ export function sessionRoutes(app: FastifyInstance, { db, clock }: { db: Db; clo
         })
         .from(sessions)
         .where(ownSession(req.params.id, me))
-        .for("update");
+        .for("no key update");
       if (!s) throw notFound();
       assertChangeable(s, me.role, now);
       const cancelled = await cancelSession(tx, { id: s.id, by: me.id, reason: me.role, now });
@@ -97,8 +100,13 @@ export function sessionRoutes(app: FastifyInstance, { db, clock }: { db: Db; clo
           .select({ status: sessions.status, startsAt: sessions.startsAt })
           .from(sessions)
           .where(eq(sessions.id, old.id))
-          .for("update");
+          // NO KEY UPDATE for the same reason as in cancel: the reminder worker must not deadlock with it.
+          .for("no key update");
         assertChangeable(locked!, "member", now);
+        // Otherwise the member would get a new session at the same time and the professional a "moved" notice.
+        if (locked!.startsAt.getTime() === new Date(body.startsAt).getTime()) {
+          throw new HttpError(422, "SAME_TIME", "That is already the time of this session.");
+        }
         if (!slot) throw slotNotAvailable();
 
         // Cancel first: otherwise the member's own old session blocks a new time that overlaps it.
@@ -144,7 +152,7 @@ export function sessionRoutes(app: FastifyInstance, { db, clock }: { db: Db; clo
         endsAt: sessions.endsAt,
         status: sessions.status,
         cancelReason: sessions.cancelReason,
-        // Only public fields of the other person: never an email.
+        // Never an email.
         counterpart: { id: users.id, name: users.name, timezone: users.timezone },
       })
       .from(sessions)
@@ -152,7 +160,13 @@ export function sessionRoutes(app: FastifyInstance, { db, clock }: { db: Db; clo
       .where(and(eq(mine, me.id), inScope))
       .orderBy(scope === "upcoming" ? asc(sessions.startsAt) : desc(sessions.startsAt));
 
-    return rows.map((r) => ({ ...r, startsAt: r.startsAt.toISOString(), endsAt: r.endsAt.toISOString() }));
+    return rows.map((r) => ({
+      ...r,
+      startsAt: r.startsAt.toISOString(),
+      endsAt: r.endsAt.toISOString(),
+      // A member needs the professional's id (to reschedule) and zone; a professional only the member's name.
+      counterpart: me.role === "member" ? r.counterpart : { name: r.counterpart.name },
+    }));
   });
 }
 
