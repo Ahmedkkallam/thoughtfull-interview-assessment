@@ -1,28 +1,41 @@
 import { generateSlots, type Interval } from "@thoughtfull/domain";
-import { eq } from "drizzle-orm";
+import { and, eq, gt, or } from "drizzle-orm";
 import { getWorkingHours } from "../availability/routes.ts";
 import type { Db } from "../db/client.ts";
-import { users } from "../db/schema.ts";
+import { sessions, users } from "../db/schema.ts";
 
-/* eslint-disable @typescript-eslint/no-unused-vars -- the parameters are the contract; sessions are not stored yet */
-// Booked sessions of both the professional and the member go here, so a free slot is free for both.
+// Booked sessions of both the professional and the member, so a listed slot is free for both.
 export async function getBusyIntervals(
-  _db: Db,
-  _who: { professionalId: string; memberId: string },
+  db: Db,
+  { professionalId, memberId, now }: { professionalId: string; memberId: string; now: Date },
 ): Promise<Interval[]> {
-  return [];
+  return db
+    .select({ startsAt: sessions.startsAt, endsAt: sessions.endsAt })
+    .from(sessions)
+    .where(
+      and(
+        eq(sessions.status, "booked"),
+        gt(sessions.endsAt, now),
+        or(eq(sessions.professionalId, professionalId), eq(sessions.memberId, memberId)),
+      ),
+    );
 }
-/* eslint-enable @typescript-eslint/no-unused-vars */
+
+// Every slot in the professional's working hours for the next 28 days, minus `busy`.
+export async function listWorkingSlots(
+  db: Db,
+  { professionalId, now, busy = [] }: { professionalId: string; now: Date; busy?: Interval[] },
+): Promise<Interval[]> {
+  const [pro] = await db.select({ timezone: users.timezone }).from(users).where(eq(users.id, professionalId));
+  if (!pro) return [];
+  const hours = await getWorkingHours(db, professionalId);
+  return generateSlots({ hours, proZone: pro.timezone, busy, now, windowDays: 28, minNoticeMin: 0 });
+}
 
 export async function listFreeSlots(
   db: Db,
   { professionalId, memberId, now }: { professionalId: string; memberId: string; now: Date },
 ): Promise<Interval[]> {
-  const [pro] = await db.select({ timezone: users.timezone }).from(users).where(eq(users.id, professionalId));
-  if (!pro) return [];
-  const [hours, busy] = await Promise.all([
-    getWorkingHours(db, professionalId),
-    getBusyIntervals(db, { professionalId, memberId }),
-  ]);
-  return generateSlots({ hours, proZone: pro.timezone, busy, now, windowDays: 28, minNoticeMin: 0 });
+  const busy = await getBusyIntervals(db, { professionalId, memberId, now });
+  return listWorkingSlots(db, { professionalId, now, busy });
 }

@@ -9,6 +9,7 @@ import type { Clock } from "./clock.ts";
 import { createDb } from "./db/client.ts";
 import { errorHandler } from "./errors.ts";
 import { professionalRoutes } from "./professionals/routes.ts";
+import { sessionRoutes } from "./sessions/routes.ts";
 
 export type AppDeps = { pool: Pool; clock: Clock };
 
@@ -35,6 +36,7 @@ export function buildApp({ pool, clock }: AppDeps) {
   authRoutes(app, { db, clock });
   availabilityRoutes(app, { db });
   professionalRoutes(app, { db, clock });
+  sessionRoutes(app, { db, clock });
 
   return app;
 }

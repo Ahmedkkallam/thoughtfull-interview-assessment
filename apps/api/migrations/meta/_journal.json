@@ -22,6 +22,20 @@
       "when": 1794096035092,
       "tag": "0002_working_hours",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794096717943,
+      "tag": "0003_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794096723662,
+      "tag": "0004_sessions_guards",
+      "breakpoints": true
     }
   ]
 }
