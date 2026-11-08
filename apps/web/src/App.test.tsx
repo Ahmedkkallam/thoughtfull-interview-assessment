@@ -253,3 +253,160 @@ test("professionals are told the booking pages are for members", async () => {
   renderAt("/professionals");
   expect(await screen.findByText("This page is for members.")).toBeTruthy();
 });
+
+// ---- sessions, cancel, reschedule, notifications ----
+const sgMember = { ...user, timezone: "Asia/Singapore" };
+const drMira = { id: "p1", name: "Dr. Mira Okafor", timezone: "Europe/London" };
+const hoursFromNow = (h: number) => new Date(Date.now() + h * 3_600_000).toISOString();
+const sessionAt = (id: string, startsAt: string, extra: object = {}) => ({
+  id,
+  startsAt,
+  endsAt: new Date(new Date(startsAt).getTime() + 50 * 60_000).toISOString(),
+  status: "booked",
+  cancelReason: null,
+  counterpart: drMira,
+  ...extra,
+});
+const noNotes = () => json([]);
+
+test("a member sees upcoming sessions in their own timezone with the professional's name", async () => {
+  mockApi({
+    "GET /api/me": () => json(sgMember),
+    "GET /api/notifications": noNotes,
+    "GET /api/sessions?scope=upcoming": () => json([sessionAt("s1", "2026-11-12T14:00:00.000Z")]),
+    "GET /api/sessions?scope=past": () => json([sessionAt("s0", "2026-10-01T09:00:00.000Z", { status: "cancelled", cancelReason: "member" })]),
+  });
+  renderAt("/sessions");
+  expect(await screen.findByText("Thu 12 Nov 2026")).toBeTruthy();
+  expect(screen.getByText(/22:00–22:50 with Dr\. Mira Okafor/)).toBeTruthy();
+  expect(await screen.findByText("Cancelled by you")).toBeTruthy();
+});
+
+test("a professional sees the member's name and who cancelled", async () => {
+  const lina = { id: "m1", name: "Lina Tan", timezone: "Asia/Singapore" };
+  mockApi({
+    "GET /api/me": () => json({ ...user, role: "professional", name: "Dr. Mira Okafor" }),
+    "GET /api/notifications": noNotes,
+    "GET /api/sessions?scope=upcoming": () => json([sessionAt("s1", "2026-11-12T14:00:00.000Z", { counterpart: lina })]),
+    "GET /api/sessions?scope=past": () =>
+      json([sessionAt("s0", "2026-10-01T09:00:00.000Z", { counterpart: lina, status: "cancelled", cancelReason: "member" })]),
+  });
+  renderAt("/sessions");
+  expect(await screen.findByText(/14:00–14:50 with Lina Tan/)).toBeTruthy(); // London is on GMT in November
+  expect(await screen.findByText("Cancelled by the member")).toBeTruthy();
+});
+
+test("cancelling asks first, posts, and shows success", async () => {
+  const fetchMock = mockApi({
+    "GET /api/me": () => json(user),
+    "GET /api/notifications": noNotes,
+    "GET /api/sessions?scope=upcoming": () => json([sessionAt("s1", hoursFromNow(240))]),
+    "GET /api/sessions?scope=past": () => json([]),
+    "POST /api/sessions/s1/cancel": () => json(sessionAt("s1", hoursFromNow(240), { status: "cancelled", cancelReason: "member" })),
+  });
+  renderAt("/sessions");
+  fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+  expect(screen.getByText("Cancel this session?")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Yes" }));
+  expect(await screen.findByText("Session cancelled.")).toBeTruthy();
+  expect(fetchMock.mock.calls.some(([p, i]) => p === "/api/sessions/s1/cancel" && i?.method === "POST")).toBe(true);
+});
+
+test("a refused cancel shows the server's message", async () => {
+  const message = "Sessions can't be cancelled or rescheduled less than 24 hours before they start.";
+  mockApi({
+    "GET /api/me": () => json(user),
+    "GET /api/notifications": noNotes,
+    "GET /api/sessions?scope=upcoming": () => json([sessionAt("s1", hoursFromNow(240))]),
+    "GET /api/sessions?scope=past": () => json([]),
+    "POST /api/sessions/s1/cancel": () => json({ error: { code: "TOO_LATE", message } }, 409),
+  });
+  renderAt("/sessions");
+  fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+  fireEvent.click(screen.getByRole("button", { name: "Yes" }));
+  expect((await screen.findByRole("alert")).textContent).toBe(message);
+});
+
+test("inside 24 hours the member's buttons are disabled with an explanation", async () => {
+  mockApi({
+    "GET /api/me": () => json(user),
+    "GET /api/notifications": noNotes,
+    "GET /api/sessions?scope=upcoming": () => json([sessionAt("s1", hoursFromNow(5))]),
+    "GET /api/sessions?scope=past": () => json([]),
+  });
+  renderAt("/sessions");
+  const cancel = (await screen.findByRole("button", { name: "Cancel" })) as HTMLButtonElement;
+  expect(cancel.disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Reschedule" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByText("Changes are possible up to 24 hours before the start.")).toBeTruthy();
+});
+
+test("a professional can still cancel inside 24 hours", async () => {
+  mockApi({
+    "GET /api/me": () => json({ ...user, role: "professional" }),
+    "GET /api/notifications": noNotes,
+    "GET /api/sessions?scope=upcoming": () => json([sessionAt("s1", hoursFromNow(5))]),
+    "GET /api/sessions?scope=past": () => json([]),
+  });
+  renderAt("/sessions");
+  expect(((await screen.findByRole("button", { name: "Cancel" })) as HTMLButtonElement).disabled).toBe(false);
+});
+
+test("rescheduling posts the new start to the reschedule URL", async () => {
+  const old = sessionAt("s1", hoursFromNow(240));
+  const fetchMock = mockApi({
+    "GET /api/me": () => json(sgMember),
+    "GET /api/notifications": noNotes,
+    "GET /api/professionals/p1": () => json(drMira),
+    "GET /api/sessions?scope=upcoming": () => json([old]),
+    "POST /api/sessions/s1/reschedule": () => json({ ...sessionAt("s2", slot.startsAt), professional: drMira }, 201),
+  });
+  renderAt(`${confirmPath}&reschedule=s1`);
+  expect(await screen.findByRole("heading", { name: "Move your session" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Move session" }));
+  expect(await screen.findByText("Moved. Your reminders were updated.")).toBeTruthy();
+  const call = fetchMock.mock.calls.find(([p]) => p === "/api/sessions/s1/reschedule")!;
+  expect(JSON.parse(call[1]!.body as string)).toEqual({ startsAt: slot.startsAt });
+  expect(screen.getAllByRole("link", { name: "My sessions" }).length).toBe(2); // header nav and the success message
+});
+
+test("the profile in reschedule mode shows a banner and keeps the session id on slot links", async () => {
+  mockApi({
+    "GET /api/me": () => json(sgMember),
+    "GET /api/notifications": noNotes,
+    "GET /api/professionals/p1": () => json(drMira),
+    "GET /api/professionals/p1/slots": () => json({ slots: [slot] }),
+    "GET /api/sessions?scope=upcoming": () => json([sessionAt("s1", "2026-11-12T14:00:00.000Z")]),
+  });
+  renderAt("/professionals/p1?reschedule=s1");
+  expect(await screen.findByText(/Choose a new time for your session on Thu 12 Nov 2026, 22:00/)).toBeTruthy();
+  const link = (await screen.findAllByRole("link")).find((l) => l.getAttribute("href")?.includes("/confirm"))!;
+  expect(link.getAttribute("href")).toContain("&reschedule=s1");
+});
+
+test("notifications read as sentences in the viewer's zone and mark-as-read posts", async () => {
+  let readAt: string | null = null;
+  const note = (id: string, kind: string, extra: object = {}) => ({
+    id,
+    kind,
+    createdAt: "2026-11-11T14:00:00.000Z",
+    readAt: null,
+    session: { id: "s1", startsAt: "2026-11-12T14:00:00.000Z", endsAt: "2026-11-12T14:50:00.000Z", counterpart: { name: drMira.name } },
+    ...extra,
+  });
+  const fetchMock = mockApi({
+    "GET /api/me": () => json(sgMember),
+    "GET /api/notifications": () => json([note("n1", "reminder_24h", { readAt }), note("n2", "session_cancelled", { readAt: "2026-11-11T15:00:00.000Z" })]),
+    "POST /api/notifications/n1/read": () => {
+      readAt = "2026-11-11T16:00:00.000Z";
+      return new Response(null, { status: 204 });
+    },
+  });
+  renderAt("/notifications");
+  expect(await screen.findByText("Reminder: your session with Dr. Mira Okafor starts in 24 hours (Thu 12 Nov 2026, 22:00)")).toBeTruthy();
+  expect(screen.getByText("Dr. Mira Okafor cancelled your session on Thu 12 Nov 2026, 22:00")).toBeTruthy();
+  expect(await screen.findByRole("link", { name: "Notifications (1)" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Mark as read" }));
+  await waitFor(() => expect(fetchMock.mock.calls.some(([p, i]) => p === "/api/notifications/n1/read" && i?.method === "POST")).toBe(true));
+  expect(await screen.findByRole("link", { name: "Notifications (0)" })).toBeTruthy();
+});

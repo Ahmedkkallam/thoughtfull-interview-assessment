@@ -4,7 +4,8 @@ import type { ReactNode } from "react";
 import { Link, useOutletContext, useParams, useSearchParams } from "react-router";
 import { api } from "./api.ts";
 import { postJson, type Me } from "./auth.ts";
-import { formatDay, formatRange } from "./format.ts";
+import { formatDay, formatRange, formatTime } from "./format.ts";
+import { useSessions } from "./Sessions.tsx";
 
 type Professional = { id: string; name: string; timezone: string };
 type Booked = { id: string; startsAt: string; endsAt: string; status: string; professional: Professional };
@@ -49,8 +50,17 @@ export function ProfessionalProfile() {
   return <MemberOnly>{(me) => <Profile timezone={me.timezone} />}</MemberOnly>;
 }
 
+// When moving a session, the old one is looked up so the page can say which time is being replaced.
+function useRescheduleTarget() {
+  const sessionId = useSearchParams()[0].get("reschedule");
+  const upcoming = useSessions("upcoming");
+  const old = sessionId ? upcoming.data?.find((s) => s.id === sessionId) : undefined;
+  return { sessionId, old, loading: !!sessionId && upcoming.isPending };
+}
+
 function Profile({ timezone }: { timezone: string }) {
   const id = useParams().id!;
+  const target = useRescheduleTarget();
   const pro = useProfessional(id);
   const slots = useQuery({
     queryKey: ["slots", id],
@@ -72,6 +82,12 @@ function Profile({ timezone }: { timezone: string }) {
       </p>
       <h1>{pro.data.name}</h1>
       <p>Times shown in {timezone}</p>
+      {target.old && (
+        <p role="status">
+          Choose a new time for your session on {formatDay(new Date(target.old.startsAt), timezone)},{" "}
+          {formatTime(new Date(target.old.startsAt), timezone)}
+        </p>
+      )}
       {days.length === 0 && <p>No free times in the next 4 weeks</p>}
       {days.map((d) => (
         <section key={d.day} aria-labelledby={`day-${d.day}`}>
@@ -79,7 +95,7 @@ function Profile({ timezone }: { timezone: string }) {
           <ul className="plain slots">
             {d.slots.map((s) => (
               <li key={s.iso}>
-                <Link className="slot" to={`/professionals/${id}/confirm?start=${encodeURIComponent(s.iso)}`}>
+                <Link className="slot" to={`/professionals/${id}/confirm?start=${encodeURIComponent(s.iso)}${target.sessionId ? `&reschedule=${target.sessionId}` : ""}`}>
                   {formatRange(s.startsAt, s.endsAt, timezone)}
                 </Link>
               </li>
@@ -100,31 +116,40 @@ function Confirm({ timezone }: { timezone: string }) {
   const startParam = useSearchParams()[0].get("start") ?? "";
   const start = new Date(startParam);
   const pro = useProfessional(id);
+  const target = useRescheduleTarget();
+  const moving = !!target.sessionId;
   const queryClient = useQueryClient();
 
   const book = useMutation({
-    mutationFn: () => postJson<Booked>("/api/sessions", { professionalId: id, startsAt: startParam }),
-    // Whatever the outcome, the slot list is stale now.
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ["slots", id] }),
+    mutationFn: () =>
+      moving
+        ? postJson<Booked>(`/api/sessions/${target.sessionId}/reschedule`, { startsAt: startParam })
+        : postJson<Booked>("/api/sessions", { professionalId: id, startsAt: startParam }),
+    // Whatever the outcome, the slot list and the session lists are stale now.
+    onSettled: () => {
+      for (const key of ["slots", "sessions", "notifications"]) queryClient.invalidateQueries({ queryKey: [key] });
+    },
   });
 
   const back = <Link to={`/professionals/${id}`}>Back to the calendar</Link>;
   if (Number.isNaN(start.getTime())) return <p role="alert">That time is not valid. {back}</p>;
-  if (pro.isPending) return <p role="status">Loading…</p>;
+  if (pro.isPending || target.loading) return <p role="status">Loading…</p>;
   if (pro.isError) return <p role="alert">Could not load this professional: {pro.error.message}</p>;
 
   if (book.isSuccess) {
     const s = book.data;
     return (
       <>
-        <h1>Booked</h1>
-        <p role="status">Booked. You'll get reminders 24 hours and 1 hour before.</p>
+        <h1>{moving ? "Moved" : "Booked"}</h1>
+        <p role="status">
+          {moving ? "Moved. Your reminders were updated." : "Booked. You'll get reminders 24 hours and 1 hour before."}
+        </p>
         <p>
           {s.professional.name}, {formatDay(new Date(s.startsAt), timezone)},{" "}
           {formatRange(new Date(s.startsAt), new Date(s.endsAt), timezone)} ({timezone})
         </p>
         <p>
-          <Link to="/">Home</Link>
+          <Link to="/sessions">My sessions</Link>
         </p>
       </>
     );
@@ -133,7 +158,13 @@ function Confirm({ timezone }: { timezone: string }) {
   const end = new Date(start.getTime() + SESSION_MINUTES * 60_000);
   return (
     <>
-      <h1>Confirm your session</h1>
+      <h1>{moving ? "Move your session" : "Confirm your session"}</h1>
+      {target.old && (
+        <p>
+          Currently {formatDay(new Date(target.old.startsAt), timezone)},{" "}
+          {formatRange(new Date(target.old.startsAt), new Date(target.old.endsAt), timezone)} ({timezone})
+        </p>
+      )}
       <dl>
         <dt>Professional</dt>
         <dd>{pro.data.name}</dd>
@@ -153,7 +184,7 @@ function Confirm({ timezone }: { timezone: string }) {
       )}
       <div className="actions">
         <button type="button" onClick={() => book.mutate()} disabled={book.isPending}>
-          {book.isPending ? "Booking…" : "Book session"}
+          {book.isPending ? (moving ? "Moving…" : "Booking…") : moving ? "Move session" : "Book session"}
         </button>
         <Link className="button-link" to={`/professionals/${id}`}>
           Back

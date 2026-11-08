@@ -27,3 +27,5 @@ input[aria-invalid="true"] { border-color: #9b1c1c; border-width: 2px; }
 .actions { display: flex; gap: 1rem; align-items: center; }
 dt { font-weight: 600; }
 dd { margin: 0 0 0.5rem; }
+.session { margin-bottom: 1rem; }
+.badge { padding: 0.1rem 0.5rem; border: 1px solid #555; border-radius: 4px; }

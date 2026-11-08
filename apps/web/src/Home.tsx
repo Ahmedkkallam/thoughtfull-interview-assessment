@@ -12,6 +12,9 @@ export function Home() {
           <p>
             <Link to="/professionals">Find a professional</Link>
           </p>
+          <p>
+            <Link to="/sessions">My sessions</Link>
+          </p>
         </>
       ) : (
         <>
@@ -19,8 +22,14 @@ export function Home() {
           <p>
             <Link to="/availability">Set your working hours</Link>
           </p>
+          <p>
+            <Link to="/sessions">My schedule</Link>
+          </p>
         </>
       )}
+      <p>
+        <Link to="/notifications">Notifications</Link>
+      </p>
     </>
   );
 }

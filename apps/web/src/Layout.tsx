@@ -2,18 +2,27 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Navigate, NavLink, Outlet, useNavigate } from "react-router";
 import { api } from "./api.ts";
 import { useMe, type Me } from "./auth.ts";
+import { useNotifications } from "./Notifications.tsx";
 
 const roleLabel = { member: "Member", professional: "Professional" };
 
 // Links per role; only pages that exist are listed.
 const navLinks: Record<Me["role"], { to: string; label: string }[]> = {
-  member: [{ to: "/professionals", label: "Find a professional" }],
-  professional: [{ to: "/availability", label: "My hours" }],
+  member: [
+    { to: "/professionals", label: "Find a professional" },
+    { to: "/sessions", label: "My sessions" },
+  ],
+  professional: [
+    { to: "/availability", label: "My hours" },
+    { to: "/sessions", label: "My schedule" },
+  ],
 };
 
 // Signed-out visitors are sent to /login. The API still checks every request itself.
 export function RequireAuth() {
   const me = useMe();
+  const notifications = useNotifications();
+  const unread = notifications.data?.filter((n) => !n.readAt).length;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const logout = useMutation({
@@ -40,6 +49,7 @@ export function RequireAuth() {
               {l.label}
             </NavLink>
           ))}
+          <NavLink to="/notifications">Notifications{unread === undefined ? "" : ` (${unread})`}</NavLink>
         </nav>
         <span>
           {me.data.name} ({roleLabel[me.data.role]})
