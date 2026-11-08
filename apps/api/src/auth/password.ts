@@ -2,7 +2,10 @@ import { randomBytes, scrypt, timingSafeEqual, type ScryptOptions } from "node:c
 
 // scrypt is built into Node (no native build). Parameters are stored with each hash,
 // so they can be raised later without breaking existing accounts.
-const N = 2 ** 15;
+// Production cost is 2^15. Tests lower it via SCRYPT_N because they sign up hundreds of users;
+// stored hashes carry their own N, so verification works at any cost.
+export const DEFAULT_N = 2 ** 15;
+const N = Number(process.env.SCRYPT_N) || DEFAULT_N;
 const r = 8;
 const p = 1;
 const KEY_LENGTH = 64;

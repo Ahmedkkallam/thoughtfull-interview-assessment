@@ -113,7 +113,8 @@ describe("sign up", () => {
     const { rows } = await pool.query<{ password_hash: string }>("select password_hash from users");
     for (const { password_hash } of rows) {
       expect(password_hash).not.toContain(mira.password);
-      expect(password_hash.startsWith("scrypt$32768$8$1$")).toBe(true);
+      // Test cost (SCRYPT_N in vitest.config.ts); the production default is asserted in password.test.ts.
+      expect(password_hash.startsWith("scrypt$1024$8$1$")).toBe(true);
     }
     // Same password, different salt: the hashes differ.
     expect(rows[0]!.password_hash).not.toBe(rows[1]!.password_hash);
