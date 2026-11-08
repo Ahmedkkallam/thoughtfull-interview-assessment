@@ -11,7 +11,7 @@
   },
   "scripts": {
     "test": "docker compose --profile test up -d --wait db-test && vitest run",
-    "dev": "node scripts/dev.js",
+    "dev": "node --env-file-if-exists=.env scripts/dev.js",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit && tsc --noEmit -p apps/web",
     "db:migrate": "npm run db:migrate -w apps/api"

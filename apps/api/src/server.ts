@@ -8,4 +8,6 @@ if (!databaseUrl) throw new Error("DATABASE_URL is not set");
 const pool = new pg.Pool({ connectionString: databaseUrl });
 const app = buildApp({ pool, clock: systemClock });
 
-await app.listen({ port: Number(process.env.PORT ?? 3000), host: "0.0.0.0" });
+const port = Number(process.env.API_PORT ?? 3000);
+await app.listen({ port, host: "0.0.0.0" });
+console.log(`API listening on http://localhost:${port}`);
