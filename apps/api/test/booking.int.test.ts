@@ -117,6 +117,30 @@ describe("booking a session", () => {
     expect((await slotsOf(ana, ravi)).map((s) => s.startsAt)).toContain(slot.startsAt);
   });
 
+  it("leaves no trace of who booked a taken slot in what another member sees", async () => {
+    const pro = await professional();
+    const leo = await member();
+    const ana = await member("Ana Silva");
+    const slot = await slotAhead(leo, pro);
+    await book(ana, { professionalId: pro.id, startsAt: slot.startsAt });
+
+    const res = await app.inject({ method: "GET", url: `/api/professionals/${pro.id}/slots`, cookies: { session: leo.token } });
+    // Only a list of times: the taken one is simply missing, as if the professional did not work then.
+    expect(Object.keys(res.json())).toEqual(["slots"]);
+    for (const s of res.json().slots) expect(Object.keys(s).sort()).toEqual(["endsAt", "startsAt"]);
+    for (const secret of [ana.id, "Ana Silva", "@example.test"]) expect(res.body).not.toContain(secret);
+  });
+
+  it("books a slot when the client writes the same instant with a UTC offset", async () => {
+    const pro = await professional();
+    const leo = await member();
+    const slot = await slotAhead(leo, pro);
+    const singapore = new Date(new Date(slot.startsAt).getTime() + 8 * HOUR).toISOString().replace("Z", "+08:00");
+    const res = await book(leo, { professionalId: pro.id, startsAt: singapore });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().startsAt).toBe(slot.startsAt);
+  });
+
   it("books the same time again once the earlier session is cancelled", async () => {
     const pro = await professional();
     const leo = await member();
@@ -160,6 +184,77 @@ describe("double-booking under concurrent requests", () => {
 
     expect(results.map((r) => r.statusCode).sort()).toEqual([201, 409]);
     expect(results.find((r) => r.statusCode === 409)!.json().error.code).toBe("MEMBER_OVERLAP");
+  });
+
+  // A deadlock between racing inserts is rare in a single round, so the race is repeated.
+  it("answers only 201 or 409, never an error, over many rounds of ten members racing for one slot", async () => {
+    const pro = await professional();
+    const members = await Promise.all(Array.from({ length: 10 }, (_, i) => member(`Member ${i + 1}`)));
+    const slots = (await slotsOf(members[0]!, pro)).filter((s) => new Date(s.startsAt).getTime() >= Date.now() + 2 * HOUR).slice(0, 40);
+
+    for (const slot of slots) {
+      const results = await Promise.all(members.map((m) => book(m, { professionalId: pro.id, startsAt: slot.startsAt })));
+      expect(results.map((r) => r.statusCode).sort()).toEqual([201, 409, 409, 409, 409, 409, 409, 409, 409, 409]);
+    }
+  }, 60_000);
+
+  it("answers only 201 or 409, never an error, over many rounds of one member racing for two professionals", async () => {
+    const mira = await professional();
+    const ravi = await professional("Dr. Ravi Menon");
+    const leo = await member();
+    const slots = (await slotsOf(leo, mira)).filter((s) => new Date(s.startsAt).getTime() >= Date.now() + 2 * HOUR).slice(0, 40);
+
+    for (const slot of slots) {
+      const results = await Promise.all([mira, ravi].map((pro) => book(leo, { professionalId: pro.id, startsAt: slot.startsAt })));
+      expect(results.map((r) => r.statusCode).sort()).toEqual([201, 409]);
+    }
+  }, 60_000);
+
+  it("books once when one member sends the same booking twice at the same moment", async () => {
+    const pro = await professional();
+    const leo = await member();
+    const slot = await slotAhead(leo, pro);
+
+    const results = await Promise.all([1, 2].map(() => book(leo, { professionalId: pro.id, startsAt: slot.startsAt })));
+
+    expect(results.map((r) => r.statusCode).sort()).toEqual([201, 409]);
+    const { rows } = await pool.query("SELECT count(*)::int AS n FROM sessions WHERE member_id = $1", [leo.id]);
+    expect(rows[0].n).toBe(1);
+  });
+
+  it("refuses a booking that overlaps the member's session by part of an hour, with a professional whose slots sit on the half hour", async () => {
+    const mira = await professional();
+    const ravi = await signup("Dr. Ravi Menon", "professional", "UTC");
+    await app.inject({
+      method: "PUT",
+      url: "/api/availability",
+      cookies: { session: ravi.token },
+      payload: { hours: everyDay.map((d) => ({ ...d, start: "00:30", end: "23:30" })) },
+    });
+    const leo = await member();
+    const ana = await member("Ana Silva");
+    // A midday slot, so the half-hour slots on both sides of it exist.
+    const slot = (await slotsOf(leo, mira)).find((s) => {
+      const hour = new Date(s.startsAt).getUTCHours();
+      return hour >= 4 && hour <= 18 && new Date(s.startsAt).getTime() >= Date.now() + 2 * HOUR;
+    })!;
+    const start = new Date(slot.startsAt).getTime();
+    const iso = (offsetMs: number) => new Date(start + offsetMs).toISOString();
+    expect((await book(leo, { professionalId: mira.id, startsAt: slot.startsAt })).statusCode).toBe(201);
+
+    // Half an hour before and after overlap Leo's 50 minutes; an hour and a half either side do not.
+    const ravisFor = async (who: User) => (await slotsOf(who, ravi)).map((s) => s.startsAt);
+    const leos = await ravisFor(leo);
+    expect(leos).not.toContain(iso(-30 * 60_000));
+    expect(leos).not.toContain(iso(30 * 60_000));
+    expect(leos).toContain(iso(-90 * 60_000));
+    expect(leos).toContain(iso(90 * 60_000));
+    expect(await ravisFor(ana)).toContain(iso(30 * 60_000));
+
+    // Even if Leo asks for a time that is no longer listed, the database refuses it.
+    const res = await book(leo, { professionalId: ravi.id, startsAt: iso(30 * 60_000) });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe("MEMBER_OVERLAP");
   });
 
   it("lets a session start exactly when the previous one ends", async () => {
@@ -212,6 +307,64 @@ describe("rejecting times that are not free slots", () => {
     for (const startsAt of [undefined, "tomorrow", 12345]) {
       expect((await book(leo, { professionalId: pro.id, startsAt })).statusCode).toBe(400);
     }
+  });
+});
+
+describe("the booking window at its edges", () => {
+  const DAY = 24 * HOUR;
+  // The app clock is pinned to the next 12:00 UTC at least two hours away, so the window's start and end are
+  // known to the millisecond. The database still checks real time, which is earlier than that.
+  async function withPinnedApp(run: (edgeApp: ReturnType<typeof buildApp>, now: number) => Promise<void>) {
+    let now = Math.floor(Date.now() / DAY) * DAY + 12 * HOUR;
+    if (now < Date.now() + 2 * HOUR) now += DAY;
+    const edgeApp = buildApp({ pool, clock: { now: () => new Date(now) } });
+    try {
+      await run(edgeApp, now);
+    } finally {
+      await edgeApp.close();
+    }
+  }
+
+  it("books the last slot before the 28 days end and refuses the first slot at their end", async () => {
+    const pro = await professional();
+    const leo = await member();
+    await withPinnedApp(async (edgeApp, now) => {
+      const edge = now + 28 * DAY;
+      const listed = await edgeApp.inject({ method: "GET", url: `/api/professionals/${pro.id}/slots`, cookies: { session: leo.token } });
+      const starts: string[] = listed.json().slots.map((s: Slot) => s.startsAt);
+      expect(starts).toContain(new Date(edge - HOUR).toISOString());
+      expect(starts).not.toContain(new Date(edge).toISOString());
+
+      const post = (startsAt: number) =>
+        edgeApp.inject({
+          method: "POST",
+          url: "/api/sessions",
+          cookies: { session: leo.token },
+          payload: { professionalId: pro.id, startsAt: new Date(startsAt).toISOString() },
+        });
+      const outside = await post(edge);
+      expect(outside.statusCode).toBe(422);
+      expect(outside.json().error.code).toBe("SLOT_NOT_AVAILABLE");
+      expect((await post(edge - HOUR)).statusCode).toBe(201);
+    });
+  });
+
+  it("books a slot that starts at the app's current moment, and refuses the one an hour before", async () => {
+    const pro = await professional();
+    const leo = await member();
+    await withPinnedApp(async (edgeApp, now) => {
+      const post = (startsAt: number) =>
+        edgeApp.inject({
+          method: "POST",
+          url: "/api/sessions",
+          cookies: { session: leo.token },
+          payload: { professionalId: pro.id, startsAt: new Date(startsAt).toISOString() },
+        });
+      const before = await post(now - HOUR);
+      expect(before.statusCode).toBe(422);
+      expect(before.json().error.code).toBe("SLOT_NOT_AVAILABLE");
+      expect((await post(now)).statusCode).toBe(201);
+    });
   });
 });
 

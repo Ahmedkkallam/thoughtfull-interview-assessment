@@ -86,6 +86,32 @@ async function lockWaiters(n: number) {
   while ((await pool.query(sql)).rows[0].n < n) await new Promise((r) => setTimeout(r, 10));
 }
 
+// The reminders still waiting, as kind and due time per recipient (sorted by kind, then recipient).
+async function waitingReminders(sessionId: string) {
+  const { rows } = await pool.query(
+    `SELECT recipient_id, kind, due_at FROM reminders
+     WHERE session_id = $1 AND delivered_at IS NULL AND cancelled_at IS NULL ORDER BY kind, recipient_id`,
+    [sessionId],
+  );
+  return rows as { recipient_id: string; kind: string; due_at: Date }[];
+}
+
+// Makes inserting a notice of this kind fail, as a crash at the last step of a change would.
+async function withFailingNotice<T>(kind: string, run: () => Promise<T>): Promise<T> {
+  await pool.query(
+    "CREATE FUNCTION fail_notice() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected failure'; END $$",
+  );
+  await pool.query(
+    `CREATE TRIGGER fail_notice BEFORE INSERT ON notifications FOR EACH ROW WHEN (NEW.kind = '${kind}') EXECUTE FUNCTION fail_notice()`,
+  );
+  try {
+    return await run();
+  } finally {
+    await pool.query("DROP TRIGGER fail_notice ON notifications");
+    await pool.query("DROP FUNCTION fail_notice()");
+  }
+}
+
 const bookedOf = (who: User) => count("sessions WHERE member_id = $1 AND status = 'booked'", [who.id]);
 const pendingReminders = (sessionId: string) =>
   count("reminders WHERE session_id = $1 AND delivered_at IS NULL AND cancelled_at IS NULL", [sessionId]);
@@ -255,6 +281,17 @@ describe("cancelling a session", () => {
     expect(await notificationsOf(mira)).toEqual([]);
   });
 
+  it("leaves the session booked, with its reminders, when a step after the cancel fails", async () => {
+    const mira = await professional();
+    const leo = await member();
+    const s = await bookAhead(leo, mira);
+    const res = await withFailingNotice("session_cancelled", () => cancel(leo, s.id));
+    expect(res.statusCode).toBe(500);
+    expect(await sessionRow(s.id)).toMatchObject({ status: "booked", cancel_reason: null, cancelled_by: null });
+    expect(await pendingReminders(s.id)).toBe(4);
+    expect(await count("notifications")).toBe(0);
+  });
+
   it("shows a cancelled session in past, and answers 409 to a second cancel", async () => {
     const mira = await professional();
     const leo = await member();
@@ -295,6 +332,54 @@ describe("rescheduling a session", () => {
     expect(await pendingReminders(old.id)).toBe(0);
     expect(await pendingReminders(moved.id)).toBe(4);
     expect(await notificationsOf(mira)).toMatchObject([{ kind: "session_rescheduled", session: { id: moved.id } }]);
+  });
+
+  it("gives the new session its own 24 h and 1 h reminders at the new times", async () => {
+    const mira = await professional();
+    const leo = await member();
+    const [first, , later] = await slotsAhead(leo, mira, 30);
+    const old = (await book(leo, mira, first!.startsAt)).json();
+    const moved = (await reschedule(leo, old.id, later!.startsAt)).json();
+
+    const people = [leo.id, mira.id].sort();
+    const movedStart = new Date(later!.startsAt).getTime();
+    expect(await waitingReminders(moved.id)).toEqual([
+      ...people.map((id) => ({ recipient_id: id, kind: "1h", due_at: new Date(movedStart - HOUR) })),
+      ...people.map((id) => ({ recipient_id: id, kind: "24h", due_at: new Date(movedStart - 24 * HOUR) })),
+    ]);
+    expect(await waitingReminders(old.id)).toEqual([]);
+  });
+
+  it("gives a session moved to less than 24 hours ahead only the 1 h reminders", async () => {
+    const mira = await professional();
+    const leo = await member();
+    const [first] = await slotsAhead(leo, mira, 30);
+    const old = (await book(leo, mira, first!.startsAt)).json();
+    // The old session is far enough away to move; the new time is 3 to 22 hours from now.
+    const soon = (await slotsAhead(leo, mira, 3)).find((x) => new Date(x.startsAt).getTime() < Date.now() + 22 * HOUR)!;
+    const res = await reschedule(leo, old.id, soon.startsAt);
+    expect(res.statusCode).toBe(201);
+
+    const soonStart = new Date(soon.startsAt).getTime();
+    expect(await waitingReminders(res.json().id)).toEqual(
+      [leo.id, mira.id].sort().map((id) => ({ recipient_id: id, kind: "1h", due_at: new Date(soonStart - HOUR) })),
+    );
+  });
+
+  it("leaves the old session booked, with its reminders and no new session, when a step after the swap fails", async () => {
+    const mira = await professional();
+    const leo = await member();
+    const [first, , later] = await slotsAhead(leo, mira, 30);
+    const old = (await book(leo, mira, first!.startsAt)).json();
+
+    const res = await withFailingNotice("session_rescheduled", () => reschedule(leo, old.id, later!.startsAt));
+
+    expect(res.statusCode).toBe(500);
+    expect(await sessionRow(old.id)).toMatchObject({ status: "booked", cancel_reason: null });
+    expect(await count("sessions")).toBe(1);
+    expect(await pendingReminders(old.id)).toBe(4);
+    expect(await count("reminders")).toBe(4);
+    expect(await notificationsOf(mira)).toEqual([]);
   });
 
   it("moves a session by 30 minutes, onto a time that overlaps the old one", async () => {

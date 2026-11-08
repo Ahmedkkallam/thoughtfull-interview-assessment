@@ -1,3 +1,4 @@
+import { groupSlotsByLocalDay } from "@thoughtfull/domain";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { createTestPool } from "./db.ts";
@@ -10,6 +11,7 @@ const app = buildApp({ pool, clock: { now: () => new Date(nowIso) } });
 const mira = { name: "Dr. Mira Okafor", email: "mira.okafor@example.test", password: "correct horse battery", role: "professional", timezone: "Europe/London" };
 const ravi = { name: "Dr. Ravi Menon", email: "ravi.menon@example.test", password: "another good password", role: "professional", timezone: "America/New_York" };
 const leo = { name: "Leo Tanaka", email: "leo.tanaka@example.test", password: "yet another password", role: "member", timezone: "Asia/Singapore" };
+const priya = { name: "Priya Nair", email: "priya.nair@example.test", password: "a fifth password", role: "member", timezone: "Asia/Kolkata" };
 const ana = { name: "Ana Silva", email: "ana.silva@example.test", password: "a fourth password", role: "member", timezone: "America/Los_Angeles" };
 
 async function signup(body: object) {
@@ -134,6 +136,40 @@ describe("free slots", () => {
     const member = await signup(leo);
     const slots = (await get(member.token, `/api/professionals/${pro.id}/slots`)).json().slots;
     expect(slots[0]).toEqual({ startsAt: "2027-03-29T08:00:00.000Z", endsAt: "2027-03-29T08:50:00.000Z" });
+  });
+});
+
+describe("slots on a member's own calendar days", () => {
+  const eveningHours = [{ weekday: 1, start: "18:00", end: "20:00" }];
+
+  // What the booking page does: take the API's instants and group them by the member's own days.
+  async function daysSeenBy(memberBody: object, proId: string, until: string) {
+    const member = await signup(memberBody);
+    const slots: { startsAt: string; endsAt: string }[] = (await get(member.token, `/api/professionals/${proId}/slots`)).json().slots;
+    const asDates = slots
+      .filter((s) => s.startsAt < until)
+      .map((s) => ({ startsAt: new Date(s.startsAt), endsAt: new Date(s.endsAt) }));
+    return groupSlotsByLocalDay(asDates, "Asia/Kolkata").map((g) => [g.day, g.slots.map((s) => s.startsAt.toISOString())]);
+  }
+
+  it("splits a London evening across two days for a member in Kolkata, at their local midnight", async () => {
+    const pro = await signup(mira);
+    await putHours(pro.token, eveningHours);
+    // January: London is on GMT. 18:00Z is 23:30 in Kolkata on Monday; 19:00Z is 00:30 on Tuesday.
+    expect(await daysSeenBy(priya, pro.id, "2027-01-05T00:00:00Z")).toEqual([
+      ["2027-01-04", ["2027-01-04T18:00:00.000Z"]],
+      ["2027-01-05", ["2027-01-04T19:00:00.000Z"]],
+    ]);
+  });
+
+  it("keeps the same London evening on one Kolkata day once London is on summer time", async () => {
+    nowIso = "2027-03-29T00:00:00.000Z";
+    const pro = await signup(mira);
+    await putHours(pro.token, eveningHours);
+    // Monday 29 March is BST: 18:00 and 19:00 in London are 17:00Z and 18:00Z, 22:30 and 23:30 in Kolkata.
+    expect(await daysSeenBy(priya, pro.id, "2027-03-30T00:00:00Z")).toEqual([
+      ["2027-03-29", ["2027-03-29T17:00:00.000Z", "2027-03-29T18:00:00.000Z"]],
+    ]);
   });
 });
 

@@ -333,6 +333,13 @@ describe("notifications in the app", () => {
     expect((await listNotifications(leo)).json()[0].readAt).toBeNull();
   });
 
+  it("does not let another member mark a notification read", async () => {
+    const { leo, ana } = await setup();
+    const [leosNewest] = (await listNotifications(leo)).json();
+    expect((await markRead(ana, leosNewest.id)).statusCode).toBe(404);
+    expect((await listNotifications(leo)).json()[0].readAt).toBeNull();
+  });
+
   it("answers 401 to someone not signed in", async () => {
     expect((await app.inject({ method: "GET", url: "/api/notifications" })).statusCode).toBe(401);
     const res = await app.inject({ method: "POST", url: "/api/notifications/00000000-0000-4000-8000-000000000000/read" });

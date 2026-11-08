@@ -207,7 +207,7 @@ test("a London slot appears under the member's Singapore day", async () => {
   expect(screen.getAllByText("Times shown in Asia/Singapore")).toHaveLength(2); // header and page
 });
 
-test("clocks going back, repeated labels get the zone name and others stay plain", async () => {
+test("when the clocks go back, repeated times get the zone name and the others stay plain", async () => {
   const ny = { ...member, timezone: "America/New_York" };
   mockApi({
     "GET /api/me": () => json(ny),
