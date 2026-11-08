@@ -1,6 +1,6 @@
 # Decisions
 
-Each decision: what, why, alternatives considered. IDs (D1, D2, …) are cited in code comments and tests where useful.
+Each decision: what, why, and the alternative I rejected. The file paths point to the code that implements it.
 
 ## Stack
 - **D1 Stack.** TypeScript on Node 24 with npm workspaces: `apps/api` (Fastify), `apps/web` (React + Vite), `packages/domain` (pure rules: slots, the 24 h rule, reminder times). PostgreSQL 16. Vitest for every test. npm rather than pnpm because it ships with Node, so a reviewer installs nothing extra.
@@ -32,6 +32,7 @@ The database is the referee, not the application. Code that first checks "is thi
 - **D28 Why not a queue (BullMQ, Kafka) or a timer in the API.** The reminders table is the queue: it lives in the same database as the booking, so there is no gap where a booking is saved but its job is not (or the reverse). A timer inside the API would run once per API copy and stop when the API crashes; the worker is its own process, started by `npm run dev` and by Docker Compose.
 - **D29 Late and stale reminders.** If the worker was down, a reminder that is overdue is still delivered once, as long as the session has not started. It is never delivered for a cancelled session or one that has already started.
 - **D30 Racing bookings take turns.** With the booking in a transaction, simultaneous bookings could deadlock inside the overlap check, which Postgres reports as an error (a 500). Booking now locks both people's user rows in id order first; racing bookings wait their turn, and the exclusion constraints still decide who wins.
+- **D31 Cancel and reschedule lock the session `FOR NO KEY UPDATE`, not `FOR UPDATE`.** The worker, while holding a session's reminder rows, inserts notifications whose foreign key takes a light `KEY SHARE` lock on that session. `FOR UPDATE` blocks that lock while the cancel waits for the same reminder rows: a deadlock. `NO KEY UPDATE` is all a status change needs and does not block foreign-key checks. A test reproduces the exact interleaving.
 - **Production:** real email, SMS or push cannot be inside the database transaction, so delivery to a provider becomes at-least-once with an idempotency key (the reminder id) that the provider uses to drop duplicates.
 
 ## Timezones and daylight saving
@@ -65,7 +66,20 @@ The database is the referee, not the application. Code that first checks "is thi
 - **D21 Weekly hours are saved as a whole week** (delete and insert in one transaction), not range by range. Overlap between ranges is checked by the shared domain validation before saving; the database also enforces weekday 1–7 and end after start.
 
 ## Assumptions (open questions in the brief)
-_To be written._
+The brief leaves these open; each answer is what I think is right for the person booking.
+- **Slot layout:** on the hour, 50 minutes plus a 10-minute break; a partial slot at the end of a range is dropped (D9).
+- **Working hours:** several ranges per day are allowed (a lunch break); a range cannot cross midnight (D11). A night shift would be entered as two ranges on two days.
+- **"Next 4 weeks":** `[now, now + 28 days)` in absolute time on the server clock, the same for every viewer (D10).
+- **Clock changes:** a local time that does not exist is skipped; a repeated one is offered once (D6). If a viewer sees two slots with the same local time on one day, the zone abbreviation is shown to tell them apart.
+- **Exactly 24 hours before:** allowed. "Up to 24 hours" is inclusive (D12).
+- **Booking less than 24 h or 1 h ahead:** allowed; reminders whose time has passed are simply not created (D25).
+- **Hours changed after bookings:** existing sessions stay as booked; only future free slots change. The professional can still cancel a session that no longer fits.
+- **Who can cancel:** members up to 24 hours before; professionals any time before the start; nobody after the start.
+- **Professional cancels:** the member gets an in-app notification. Cancelled sessions appear under "Past" with who cancelled. The old row of a reschedule is not shown (its replacement is).
+- **Reschedule:** same professional only; a different professional is a cancel plus a new booking. Moving to the time it already has is refused.
+- **One role per account:** a person who is both would use two accounts. Nobody can book themselves (database CHECK).
+- **Timezone change after sign-up:** not offered in this version. Stored times are UTC, so a change would only change how times are displayed.
+- **Professional sign-up:** anyone can register as a professional here. A real product verifies credentials first (out of scope, see production notes).
 
 ## Known limitations
 _To be written._
