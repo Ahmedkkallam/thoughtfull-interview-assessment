@@ -20,3 +20,10 @@ a { color: #1d4e89; }
 fieldset > button { margin-top: 0.25rem; }
 input[aria-invalid="true"] { border-color: #9b1c1c; border-width: 2px; }
 .nav { display: flex; gap: 1rem; }
+.plain { list-style: none; padding: 0; }
+.plain li { margin-bottom: 0.5rem; }
+.slots { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.slot, .button-link { display: inline-block; padding: 0.6rem 1rem; border: 1px solid #1d4e89; border-radius: 6px; text-decoration: none; }
+.actions { display: flex; gap: 1rem; align-items: center; }
+dt { font-weight: 600; }
+dd { margin: 0 0 0.5rem; }

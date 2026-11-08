@@ -7,7 +7,7 @@ const roleLabel = { member: "Member", professional: "Professional" };
 
 // Links per role; only pages that exist are listed.
 const navLinks: Record<Me["role"], { to: string; label: string }[]> = {
-  member: [],
+  member: [{ to: "/professionals", label: "Find a professional" }],
   professional: [{ to: "/availability", label: "My hours" }],
 };
 

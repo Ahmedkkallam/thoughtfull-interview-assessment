@@ -183,3 +183,73 @@ test("a member does not see the hours editor", async () => {
   expect(screen.queryByRole("button", { name: "Save week" })).toBeNull();
   expect(fetchMock.mock.calls.some(([p]) => p === "/api/availability")).toBe(false);
 });
+
+const member = { ...user, timezone: "Asia/Singapore" };
+const london = { id: "p1", name: "Dr. Mira Okafor", timezone: "Europe/London" };
+const slot = { startsAt: "2027-01-04T16:00:00.000Z", endsAt: "2027-01-04T16:50:00.000Z" };
+
+test("the professional list shows names and their timezone", async () => {
+  mockApi({ "GET /api/me": () => json(member), "GET /api/professionals": () => json([london]) });
+  renderAt("/professionals");
+  expect(await screen.findByRole("link", { name: "Dr. Mira Okafor" })).toBeTruthy();
+  expect(screen.getByText(/Europe\/London/)).toBeTruthy();
+});
+
+test("a London slot appears under the member's Singapore day", async () => {
+  mockApi({
+    "GET /api/me": () => json(member),
+    "GET /api/professionals/p1": () => json(london),
+    "GET /api/professionals/p1/slots": () => json({ slots: [slot] }),
+  });
+  renderAt("/professionals/p1");
+  expect(await screen.findByRole("heading", { name: "Tue 5 Jan 2027" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "00:00–00:50" })).toBeTruthy();
+  expect(screen.getAllByText("Times shown in Asia/Singapore")).toHaveLength(2); // header and page
+});
+
+test("no slots shows the empty state", async () => {
+  mockApi({
+    "GET /api/me": () => json(member),
+    "GET /api/professionals/p1": () => json(london),
+    "GET /api/professionals/p1/slots": () => json({ slots: [] }),
+  });
+  renderAt("/professionals/p1");
+  expect(await screen.findByText("No free times in the next 4 weeks")).toBeTruthy();
+});
+
+const confirmPath = `/professionals/p1/confirm?start=${encodeURIComponent(slot.startsAt)}`;
+
+test("confirming shows the member-zone time and books exactly that slot", async () => {
+  const fetchMock = mockApi({
+    "GET /api/me": () => json(member),
+    "GET /api/professionals/p1": () => json(london),
+    "POST /api/sessions": () => json({ id: "s1", ...slot, status: "booked", professional: london }, 201),
+  });
+  renderAt(confirmPath);
+  expect(await screen.findByText("Dr. Mira Okafor")).toBeTruthy();
+  expect(screen.getByText("Tue 5 Jan 2027")).toBeTruthy();
+  expect(screen.getByText("00:00–00:50 (Asia/Singapore)")).toBeTruthy();
+  expect(screen.getByText("50 minutes")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Book session" }));
+  expect(await screen.findByText("Booked. You'll get reminders 24 hours and 1 hour before.")).toBeTruthy();
+  const call = fetchMock.mock.calls.find(([, i]) => i?.method === "POST")!;
+  expect(JSON.parse(call[1]!.body as string)).toEqual({ professionalId: "p1", startsAt: slot.startsAt });
+});
+
+test("a taken slot shows the server's message", async () => {
+  mockApi({
+    "GET /api/me": () => json(member),
+    "GET /api/professionals/p1": () => json(london),
+    "POST /api/sessions": () => json({ error: { code: "SLOT_TAKEN", message: "This time is no longer available" } }, 409),
+  });
+  renderAt(confirmPath);
+  fireEvent.click(await screen.findByRole("button", { name: "Book session" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("This time is no longer available");
+  expect(screen.getByRole("link", { name: "Back to the calendar" })).toBeTruthy();
+});
+
+test("professionals are told the booking pages are for members", async () => {
+  mockApi({ "GET /api/me": () => json(pro) });
+  renderAt("/professionals");
+  expect(await screen.findByText("This page is for members.")).toBeTruthy();
+});

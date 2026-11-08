@@ -3,6 +3,7 @@ import { Availability } from "./Availability.tsx";
 import { Home } from "./Home.tsx";
 import { PublicOnly, RequireAuth } from "./Layout.tsx";
 import { Login } from "./Login.tsx";
+import { BookingConfirm, ProfessionalList, ProfessionalProfile } from "./Professionals.tsx";
 import { Signup } from "./Signup.tsx";
 
 export const routes: RouteObject[] = [
@@ -11,6 +12,9 @@ export const routes: RouteObject[] = [
     children: [
       { path: "/", element: <Home /> },
       { path: "/availability", element: <Availability /> },
+      { path: "/professionals", element: <ProfessionalList /> },
+      { path: "/professionals/:id", element: <ProfessionalProfile /> },
+      { path: "/professionals/:id/confirm", element: <BookingConfirm /> },
     ],
   },
   {
