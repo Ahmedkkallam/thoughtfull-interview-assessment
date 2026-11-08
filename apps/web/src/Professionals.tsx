@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { Link, useOutletContext, useParams, useSearchParams } from "react-router";
 import { api } from "./api.ts";
 import { postJson, type Me } from "./auth.ts";
-import { formatDay, formatRange, formatTime } from "./format.ts";
+import { formatDay, formatRange, formatTime, formatZoneName } from "./format.ts";
 import { useSessions } from "./Sessions.tsx";
 
 type Professional = { id: string; name: string; timezone: string };
@@ -93,13 +93,18 @@ function Profile({ timezone }: { timezone: string }) {
         <section key={d.day} aria-labelledby={`day-${d.day}`}>
           <h2 id={`day-${d.day}`}>{formatDay(d.slots[0]!.startsAt, timezone)}</h2>
           <ul className="plain slots">
-            {d.slots.map((s) => (
+            {d.slots.map((s) => {
+              const label = formatRange(s.startsAt, s.endsAt, timezone);
+              // Clocks going back repeat an hour; name the zone on repeated labels so the two stay distinguishable.
+              const repeated = d.slots.filter((o) => formatRange(o.startsAt, o.endsAt, timezone) === label).length > 1;
+              return (
               <li key={s.iso}>
                 <Link className="slot" to={`/professionals/${id}/confirm?start=${encodeURIComponent(s.iso)}${target.sessionId ? `&reschedule=${target.sessionId}` : ""}`}>
-                  {formatRange(s.startsAt, s.endsAt, timezone)}
+                  {repeated ? `${label} ${formatZoneName(s.startsAt, timezone)}` : label}
                 </Link>
               </li>
-            ))}
+              );
+            })}
           </ul>
         </section>
       ))}

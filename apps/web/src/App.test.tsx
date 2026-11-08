@@ -207,6 +207,26 @@ test("a London slot appears under the member's Singapore day", async () => {
   expect(screen.getAllByText("Times shown in Asia/Singapore")).toHaveLength(2); // header and page
 });
 
+test("clocks going back, repeated labels get the zone name and others stay plain", async () => {
+  const ny = { ...member, timezone: "America/New_York" };
+  mockApi({
+    "GET /api/me": () => json(ny),
+    "GET /api/professionals/p1": () => json(london),
+    "GET /api/professionals/p1/slots": () =>
+      json({
+        slots: [
+          { startsAt: "2027-11-07T05:00:00.000Z", endsAt: "2027-11-07T05:50:00.000Z" },
+          { startsAt: "2027-11-07T06:00:00.000Z", endsAt: "2027-11-07T06:50:00.000Z" },
+          { startsAt: "2027-11-07T07:00:00.000Z", endsAt: "2027-11-07T07:50:00.000Z" },
+        ],
+      }),
+  });
+  renderAt("/professionals/p1");
+  expect(await screen.findByRole("link", { name: "01:00–01:50 EDT" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "01:00–01:50 EST" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "02:00–02:50" })).toBeTruthy();
+});
+
 test("no slots shows the empty state", async () => {
   mockApi({
     "GET /api/me": () => json(member),
@@ -403,7 +423,7 @@ test("notifications read as sentences in the viewer's zone and mark-as-read post
     },
   });
   renderAt("/notifications");
-  expect(await screen.findByText("Reminder: your session with Dr. Mira Okafor starts in 24 hours (Thu 12 Nov 2026, 22:00)")).toBeTruthy();
+  expect(await screen.findByText("Reminder: your session with Dr. Mira Okafor is on Thu 12 Nov 2026 at 22:00 (24-hour reminder)")).toBeTruthy();
   expect(screen.getByText("Dr. Mira Okafor cancelled your session on Thu 12 Nov 2026, 22:00")).toBeTruthy();
   expect(await screen.findByRole("link", { name: "Notifications (1)" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Mark as read" }));

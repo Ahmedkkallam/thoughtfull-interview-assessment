@@ -20,3 +20,10 @@ export function formatTime(date: Date, timeZone: string): string {
 export function formatRange(start: Date, end: Date, timeZone: string): string {
   return `${formatTime(start, timeZone)}–${formatTime(end, timeZone)}`;
 }
+
+// "EDT" / "EST": only used to tell apart two slots with the same local label when the clocks go back.
+export function formatZoneName(date: Date, timeZone: string): string {
+  // en-US gives "EDT"; en-GB would give "GMT-4".
+  const p = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "short" }).formatToParts(date);
+  return p.find((x) => x.type === "timeZoneName")?.value ?? "";
+}

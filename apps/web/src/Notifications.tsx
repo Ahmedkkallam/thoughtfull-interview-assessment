@@ -24,12 +24,13 @@ export function useNotifications() {
 function sentence(n: Notification, timezone: string): string {
   const start = new Date(n.session.startsAt);
   const when = `${formatDay(start, timezone)}, ${formatTime(start, timezone)}`;
+  const at = `${formatDay(start, timezone)} at ${formatTime(start, timezone)}`;
   const who = n.session.counterpart.name;
   switch (n.kind) {
     case "reminder_24h":
-      return `Reminder: your session with ${who} starts in 24 hours (${when})`;
+      return `Reminder: your session with ${who} is on ${at} (24-hour reminder)`;
     case "reminder_1h":
-      return `Reminder: your session with ${who} starts in 1 hour (${when})`;
+      return `Reminder: your session with ${who} is on ${at} (1-hour reminder)`;
     case "session_cancelled":
       return `${who} cancelled your session on ${when}`;
     case "session_rescheduled":

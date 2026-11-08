@@ -11,7 +11,8 @@ export type SessionItem = {
   endsAt: string;
   status: "booked" | "cancelled";
   cancelReason: null | "member" | "professional" | "rescheduled";
-  counterpart: { id: string; name: string; timezone: string };
+  // Professionals only get the name; id and timezone are for members (reschedule is member-only).
+  counterpart: { id?: string; name: string; timezone?: string };
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -97,6 +98,7 @@ function Row({ s, me, actions }: { s: SessionItem; me: Me; actions: boolean }) {
                 Cancel
               </button>
               {me.role === "member" &&
+                s.counterpart.id &&
                 (tooLate ? (
                   <button type="button" disabled>
                     Reschedule
