@@ -38,6 +38,12 @@ _To be written as the reminder worker lands._
 - **D16 Login errors** are the same for an unknown email and a wrong password, and both take the same hashing time, so the login form does not reveal who has an account.
 - **D17 Timezones** must be IANA names. Aliases browsers send (Asia/Kolkata) are accepted; raw offsets (+05:00) are refused, because an offset cannot follow daylight saving.
 
+## Privacy and access
+- **D18 Allow-listed fields.** The professionals list and profile return only id, name and timezone; the columns are listed in one place (`apps/api/src/professionals/routes.ts`), so an email cannot leak by accident.
+- **D19 Free slots say nothing about other people.** The slots response is only `{startsAt, endsAt}`. A booked time and a time outside working hours look the same: absent.
+- **D20 Not yours = not found.** A malformed id, a member's id, or another person's session returns 404, the same as an id that does not exist, so the API does not confirm what exists.
+- **D21 Weekly hours are saved as a whole week** (delete and insert in one transaction), not range by range. Overlap between ranges is checked by the shared domain validation before saving; the database also enforces weekday 1–7 and end after start.
+
 ## Assumptions (open questions in the brief)
 _To be written._
 
