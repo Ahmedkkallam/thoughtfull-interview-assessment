@@ -22,7 +22,17 @@ The database is the referee, not the application. Code that first checks "is thi
 - **Also enforced by the database:** a session is exactly 50 minutes; a member cannot book themselves; `cancelled_at` is set exactly when the status is `cancelled`.
 
 ## How reminders are scheduled and delivered reliably
-_To be written as the reminder worker lands._
+- **D25 Scheduling (outbox).** A booking writes its reminder rows in the **same transaction** as the session (`apps/api/src/sessions/routes.ts`): 24 h and 1 h before, for both the member and the professional, so up to 4 rows. A reminder whose time has already passed is not created (`reminderSchedule` in `packages/domain`): booking 23 h ahead creates only the two 1 h reminders; booking 50 minutes ahead creates none. "24 hours" is absolute time, so it stays right across a daylight-saving change.
+- **D26 Delivery.** A separate worker process (`apps/api/src/worker.ts`) checks every 5 seconds. Each batch is one transaction (`apps/api/src/reminders/deliver.ts`):
+  1. Claim due reminders with `SELECT … FOR UPDATE OF reminders SKIP LOCKED`, only for sessions that are still booked and have not started.
+  2. Insert one notification per reminder.
+  3. Set `delivered_at` on the reminders.
+  4. Commit.
+- **D27 Why that is exactly once.** Steps 2 and 3 commit together. If the worker dies before the commit, both are undone and the reminder is picked up on the next run; after the commit, it is never selected again. `SKIP LOCKED` lets several workers run without taking the same reminder. A `UNIQUE (reminder_id)` on notifications is a second guard against a bug. Tested: a crash injected between the insert and the commit, then a "restart" on a new connection pool, delivers exactly one notification; two workers racing over 20 due reminders deliver exactly 20.
+- **D28 Why not a queue (BullMQ, Kafka) or a timer in the API.** The reminders table is the queue: it lives in the same database as the booking, so there is no gap where a booking is saved but its job is not (or the reverse). A timer inside the API would run once per API copy and stop when the API crashes; the worker is its own process, started by `npm run dev` and by Docker Compose.
+- **D29 Late and stale reminders.** If the worker was down, a reminder that is overdue is still delivered once, as long as the session has not started. It is never delivered for a cancelled session or one that has already started.
+- **D30 Racing bookings take turns.** With the booking in a transaction, simultaneous bookings could deadlock inside the overlap check, which Postgres reports as an error (a 500). Booking now locks both people's user rows in id order first; racing bookings wait their turn, and the exclusion constraints still decide who wins.
+- **Production:** real email, SMS or push cannot be inside the database transaction, so delivery to a provider becomes at-least-once with an idempotency key (the reminder id) that the provider uses to drop duplicates.
 
 ## Timezones and daylight saving
 - **D5 Storage.** Every moment (session start and end, reminder due time) is stored as UTC `timestamptz` and exchanged as ISO-8601 UTC. Working hours are stored as local wall-clock times ("Mon 09:00–17:00") plus the professional's IANA zone (`Europe/London`), never as an offset: an offset is wrong for half the year.
