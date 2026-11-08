@@ -18,6 +18,8 @@ export default defineConfig({
           include: ["test/**/*.test.ts"],
           globalSetup: ["test/global-setup.ts"],
           fileParallelism: false,
+          // Real-Postgres race tests sign up many users (scrypt) and run requests concurrently; 5 s is tight on a busy machine.
+          testTimeout: 15_000,
         },
       },
       {

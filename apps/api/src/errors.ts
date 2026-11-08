@@ -18,6 +18,8 @@ const constraintErrors: Record<string, [number, string, string]> = {
   "23P01:sessions_no_professional_overlap": [409, "SLOT_TAKEN", "This time is no longer available"],
   "23P01:sessions_no_member_overlap": [409, "MEMBER_OVERLAP", "You already have a session at this time"],
   "23514:sessions_not_in_past": [422, "PAST_SLOT", "This time has already passed"],
+  // A backstop: the row lock already makes a second reschedule of one session see it cancelled.
+  "23505:sessions_rescheduled_from_key": [409, "NOT_ACTIVE", "This session has already been cancelled or rescheduled"],
 };
 
 // Drizzle wraps the pg error in `cause`, so walk the chain until one matches.
