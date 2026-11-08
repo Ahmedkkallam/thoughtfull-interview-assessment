@@ -36,6 +36,13 @@
       "when": 1794096723662,
       "tag": "0004_sessions_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794097242718,
+      "tag": "0005_reminders",
+      "breakpoints": true
     }
   ]
 }

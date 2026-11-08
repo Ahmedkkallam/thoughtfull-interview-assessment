@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   check,
   customType,
+  index,
   pgTable,
   smallint,
   text,
@@ -99,5 +100,60 @@ export const sessions = pgTable(
     check("sessions_not_self", sql`${t.memberId} <> ${t.professionalId}`),
     // A cancelled session always records when; a booked one never has a cancel time.
     check("sessions_cancelled_at_matches_status", sql`(${t.status} = 'cancelled') = (${t.cancelledAt} is not null)`),
+  ],
+);
+
+// The outbox: written in the booking's transaction, delivered later by the worker (src/worker.ts).
+export const reminders = pgTable(
+  "reminders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => sessions.id),
+    recipientId: uuid("recipient_id")
+      .notNull()
+      .references(() => users.id),
+    kind: text("kind", { enum: ["24h", "1h"] }).notNull(),
+    dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    // Set when the session is cancelled or moved, so the worker skips it.
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  },
+  (t) => [
+    check("reminders_kind_check", sql`${t.kind} in ('24h', '1h')`),
+    unique("reminders_session_recipient_kind_key").on(t.sessionId, t.recipientId, t.kind),
+    // Small and fast to scan: only reminders still waiting to be sent.
+    index("reminders_pending").on(t.dueAt).where(sql`${t.deliveredAt} is null and ${t.cancelledAt} is null`),
+  ],
+);
+
+// The in-app list. Stores the session and kind, not text, so the app shows times in the reader's zone.
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => sessions.id),
+    kind: text("kind", {
+      enum: ["reminder_24h", "reminder_1h", "session_cancelled", "session_rescheduled"],
+    }).notNull(),
+    // UNIQUE: a second guard so one reminder can never become two notifications.
+    reminderId: uuid("reminder_id")
+      .unique("notifications_reminder_id_key")
+      .references(() => reminders.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    readAt: timestamp("read_at", { withTimezone: true }),
+  },
+  (t) => [
+    check(
+      "notifications_kind_check",
+      sql`${t.kind} in ('reminder_24h', 'reminder_1h', 'session_cancelled', 'session_rescheduled')`,
+    ),
+    index("notifications_user_created_idx").on(t.userId, t.createdAt.desc()),
   ],
 );

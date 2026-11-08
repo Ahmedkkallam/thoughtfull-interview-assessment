@@ -8,6 +8,7 @@ import { SESSION_COOKIE, findSessionUser } from "./auth/sessions.ts";
 import type { Clock } from "./clock.ts";
 import { createDb } from "./db/client.ts";
 import { errorHandler } from "./errors.ts";
+import { notificationRoutes } from "./notifications/routes.ts";
 import { professionalRoutes } from "./professionals/routes.ts";
 import { sessionRoutes } from "./sessions/routes.ts";
 
@@ -37,6 +38,7 @@ export function buildApp({ pool, clock }: AppDeps) {
   availabilityRoutes(app, { db });
   professionalRoutes(app, { db, clock });
   sessionRoutes(app, { db, clock });
+  notificationRoutes(app, { db, clock });
 
   return app;
 }

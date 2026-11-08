@@ -1,11 +1,11 @@
-// Runs the API and the web dev server together; stops both on Ctrl+C or when either exits.
+// Runs the API, the reminder worker and the web dev server together; stops all on Ctrl+C or when any exits.
 import { execSync, spawn } from "node:child_process";
 import process from "node:process";
 
 const win = process.platform === "win32";
 // One command string per child, run through a shell on every OS (an args array with shell:true makes Node warn DEP0190).
 // On Mac/Linux each child gets its own process group (detached), so the whole group can be stopped at once.
-const commands = ["npm run start -w apps/api", "npm run dev -w apps/web"];
+const commands = ["npm run start -w apps/api", "npm run worker -w apps/api", "npm run dev -w apps/web"];
 const children = commands.map((cmd) => spawn(cmd, { stdio: "inherit", shell: true, detached: !win }));
 
 function stopChild(child) {

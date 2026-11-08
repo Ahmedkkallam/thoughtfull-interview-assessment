@@ -1,10 +1,11 @@
-import { and, asc, desc, eq, gt, isNull, lte, ne, or } from "drizzle-orm";
+import { reminderSchedule } from "@thoughtfull/domain";
+import { and, asc, desc, eq, gt, inArray, isNull, lte, ne, or } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAuth, requireRole } from "../auth/guards.ts";
 import type { Clock } from "../clock.ts";
 import type { Db } from "../db/client.ts";
-import { sessions, users } from "../db/schema.ts";
+import { reminders, sessions, users } from "../db/schema.ts";
 import { HttpError } from "../errors.ts";
 import { findProfessional } from "../professionals/routes.ts";
 import { listWorkingSlots } from "../professionals/slots.ts";
@@ -21,26 +22,44 @@ export function sessionRoutes(app: FastifyInstance, { db, clock }: { db: Db; clo
   app.post("/api/sessions", { preHandler: requireRole("member") }, async (req, reply) => {
     const body = bookBody.parse(req.body);
     const pro = await findProfessional(db, body.professionalId);
+    const now = clock.now();
 
     // The start must be on the professional's slot grid, which rules out past, off-grid,
     // outside-hours and beyond-28-days times. Other bookings are not checked here on purpose:
     // the database constraints decide, and they also hold when two requests race.
     const startsAt = new Date(body.startsAt).getTime();
-    const slots = await listWorkingSlots(db, { professionalId: pro.id, now: clock.now() });
+    const slots = await listWorkingSlots(db, { professionalId: pro.id, now });
     const slot = slots.find((s) => s.startsAt.getTime() === startsAt);
     if (!slot) throw new HttpError(422, "SLOT_NOT_AVAILABLE", "This time is not one of the professional's slots");
 
-    // A plain insert: an overlap or a past start fails here and errors.ts turns it into 409 or 422.
-    const [row] = await db
-      .insert(sessions)
-      .values({ professionalId: pro.id, memberId: req.user!.id, startsAt: slot.startsAt, endsAt: slot.endsAt })
-      .returning({ id: sessions.id, startsAt: sessions.startsAt, endsAt: sessions.endsAt, status: sessions.status });
+    // The session and its reminders commit together, so a booking never exists without its reminders.
+    // An overlap or a past start fails the insert; the error leaves the transaction and errors.ts maps it to 409 or 422.
+    const row = await db.transaction(async (tx) => {
+      // Racing inserts can deadlock inside the overlap check, which Postgres reports as an error (a 500).
+      // Locking both people's rows first, always in id order, makes their bookings take turns instead;
+      // the constraints still decide who wins. NO KEY UPDATE does not block logins or other foreign keys.
+      await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(inArray(users.id, [req.user!.id, pro.id]))
+        .orderBy(asc(users.id))
+        .for("no key update");
+      const [session] = await tx
+        .insert(sessions)
+        .values({ professionalId: pro.id, memberId: req.user!.id, startsAt: slot.startsAt, endsAt: slot.endsAt })
+        .returning({ id: sessions.id, startsAt: sessions.startsAt, endsAt: sessions.endsAt, status: sessions.status });
+      const planned = reminderSchedule({ startsAt: slot.startsAt, memberId: req.user!.id, professionalId: pro.id, now });
+      if (planned.length > 0) {
+        await tx.insert(reminders).values(planned.map((r) => ({ sessionId: session!.id, ...r })));
+      }
+      return session!;
+    });
 
     return reply.status(201).send({
-      id: row!.id,
-      startsAt: row!.startsAt.toISOString(),
-      endsAt: row!.endsAt.toISOString(),
-      status: row!.status,
+      id: row.id,
+      startsAt: row.startsAt.toISOString(),
+      endsAt: row.endsAt.toISOString(),
+      status: row.status,
       professional: pro,
     });
   });
