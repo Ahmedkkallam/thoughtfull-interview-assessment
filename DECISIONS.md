@@ -9,7 +9,17 @@ Each decision: what, why, alternatives considered. IDs (D1, D2, …) are cited i
 - **D4 No queue service, no cache.** The reminders table is the queue: it is written in the same transaction as the booking, so a booking and its reminders are saved together or not at all. Kafka or BullMQ would split them across two systems, where a crash between the two writes loses or duplicates a reminder. No Redis: the data is small, slots compute in milliseconds, and a cache could show a slot that was just booked.
 
 ## How double-booking is prevented
-_To be written as the booking code lands._
+The database is the referee, not the application. Code that first checks "is this slot free?" and then inserts has a gap between the check and the insert, and two requests arriving together both pass the check.
+- **D22 Two exclusion constraints** on `sessions` (`apps/api/migrations/0004_sessions_guards.sql`):
+  - `sessions_no_professional_overlap`: no two booked sessions of the same professional may overlap in time.
+  - `sessions_no_member_overlap`: the same for a member, across all professionals.
+  - Each compares `tstzrange(starts_at, ends_at, '[)')` with `&&` (overlap). The `'[)'` range is half-open, so a 10:00–10:50 session and an 11:00 session (or one starting exactly at 10:50) do not conflict.
+  - `WHERE (status = 'booked')`: a cancelled session stops counting, which frees the time without deleting history.
+  - Postgres checks these through an index and makes a second, concurrent insert wait for the first; when the first commits, the second fails with error 23P01. The API maps that to **409 SLOT_TAKEN** or **409 MEMBER_OVERLAP** by constraint name.
+- **D23 The API checks only that the start time is a real slot** of the professional (on the hour grid, inside working hours, in the future, within 28 days), then does a plain insert. It deliberately does **not** pre-check other bookings: under a race that check would be stale anyway, and it would turn some lost races into a confusing 422 instead of 409.
+- **D24 No booking in the past**, checked twice: the slot grid uses the server clock, and a `BEFORE INSERT` trigger rejects `starts_at <= now()` using the database's own clock. A trigger rather than a CHECK constraint: a CHECK with `now()` would fail on old rows when a backup is restored.
+- **Proof:** `apps/api/test/booking.int.test.ts` sends 10 bookings for the same slot at the same moment (behind a barrier, real Postgres): exactly one 201 and nine 409. One member booking two professionals at the same time gets one 201 and one 409. With either constraint removed, these tests fail.
+- **Also enforced by the database:** a session is exactly 50 minutes; a member cannot book themselves; `cancelled_at` is set exactly when the status is `cancelled`.
 
 ## How reminders are scheduled and delivered reliably
 _To be written as the reminder worker lands._
