@@ -2,6 +2,7 @@ import cookie from "@fastify/cookie";
 import Fastify from "fastify";
 import { sql } from "drizzle-orm";
 import type { Pool } from "pg";
+import { availabilityRoutes } from "./availability/routes.ts";
 import { authRoutes } from "./auth/routes.ts";
 import { SESSION_COOKIE, findSessionUser } from "./auth/sessions.ts";
 import type { Clock } from "./clock.ts";
@@ -31,6 +32,7 @@ export function buildApp({ pool, clock }: AppDeps) {
     return { ok: true };
   });
   authRoutes(app, { db, clock });
+  availabilityRoutes(app, { db });
 
   return app;
 }
