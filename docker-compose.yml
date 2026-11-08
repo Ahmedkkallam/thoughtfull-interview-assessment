@@ -15,6 +15,47 @@ services:
       timeout: 3s
       retries: 30
 
+  # One-shot: create the tables, then add the demo accounts (safe to repeat).
+  migrate:
+    build: .
+    command: sh -c "npm run db:migrate -w apps/api && npm run seed -w apps/api"
+    environment: &app-env
+      DATABASE_URL: postgres://thoughtfull:thoughtfull@db:5432/thoughtfull
+      SEED_PASSWORD: ${SEED_PASSWORD:-demo-password-123}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build: .
+    command: npm run start -w apps/api
+    environment:
+      <<: *app-env
+      API_PORT: "3000"
+    ports:
+      - "3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build: .
+    command: npm run worker -w apps/api
+    environment: *app-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build: .
+    command: npm run dev -w apps/web -- --host 0.0.0.0
+    environment:
+      API_PROXY_TARGET: http://api:3000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+
   # Throwaway database for tests: data lives in memory and vanishes on down.
   db-test:
     profiles: ["test"]

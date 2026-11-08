@@ -8,7 +8,8 @@
     "worker": "node --env-file-if-exists=../../.env src/worker.ts",
     "db:generate": "drizzle-kit generate",
     "db:custom": "drizzle-kit generate --custom",
-    "db:migrate": "node --env-file-if-exists=../../.env src/db/migrate.ts"
+    "db:migrate": "node --env-file-if-exists=../../.env src/db/migrate.ts",
+    "seed": "node --env-file-if-exists=../../.env src/seed.ts"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.5",

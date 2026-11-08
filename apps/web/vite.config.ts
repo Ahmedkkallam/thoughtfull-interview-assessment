@@ -7,6 +7,6 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     // Same-origin API calls from the browser: no CORS, and cookies work.
-    proxy: { "/api": `http://localhost:${process.env.API_PORT ?? 3000}` },
+    proxy: { "/api": process.env.API_PROXY_TARGET ?? `http://localhost:${process.env.API_PORT ?? 3000}` },
   },
 });
