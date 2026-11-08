@@ -1,5 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import pg from "pg";
+import { systemClock } from "./clock.ts";
 import { createDb } from "./db/client.ts";
 import { deliverDueReminders } from "./reminders/deliver.ts";
 
@@ -11,6 +12,7 @@ const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is not set");
 
 const pool = new pg.Pool({ connectionString: databaseUrl });
+pool.on("error", (err) => console.error("idle database connection error", err));
 const db = createDb(pool);
 
 // On Ctrl+C or a container stop, let the current run commit, then exit.
@@ -20,7 +22,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => 
 console.log("reminder worker started");
 while (!stop.signal.aborted) {
   try {
-    const delivered = await deliverDueReminders(db, new Date());
+    const delivered = await deliverDueReminders(db, systemClock.now());
     if (delivered > 0) console.log(`delivered ${delivered} reminder notification(s)`);
   } catch (err) {
     // The failed batch was rolled back, so its reminders are simply picked up on the next run.

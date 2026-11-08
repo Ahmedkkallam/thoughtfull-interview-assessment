@@ -4,6 +4,14 @@
 // offset strings like "+05:00" (which Intl also accepts) do not.
 const namedZones = new Set([...Intl.supportedValuesOf("timeZone"), "UTC"]);
 
+// "europe/london" passes Intl; store "Europe/London". Only a difference in letter case is fixed, and only
+// for names on Node's list; other accepted names (aliases such as Asia/Kolkata) are stored as given.
+const byLowerCase = new Map([...namedZones].map((z) => [z.toLowerCase(), z]));
+
+export function canonicalTimeZone(name: string): string {
+  return byLowerCase.get(name.toLowerCase()) ?? name;
+}
+
 export function isValidTimeZone(name: string): boolean {
   try {
     const resolved = new Intl.DateTimeFormat("en-US", { timeZone: name }).resolvedOptions().timeZone;

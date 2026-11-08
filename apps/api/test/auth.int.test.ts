@@ -86,6 +86,11 @@ describe("sign up", () => {
     expect(res.json().error.code).toBe("VALIDATION_ERROR");
   });
 
+  it("stores the canonical casing, and keeps aliases as given", async () => {
+    expect((await signup({ ...leo, timezone: "europe/london" })).json().timezone).toBe("Europe/London");
+    expect((await signup({ ...mira, timezone: "Asia/Kolkata" })).json().timezone).toBe("Asia/Kolkata");
+  });
+
   it.each(["UTC", "Asia/Kolkata", "America/New_York"])("accepts %j as a timezone", async (timezone) => {
     const res = await signup({ ...leo, timezone });
     expect(res.statusCode).toBe(201);
@@ -234,6 +239,53 @@ describe("role guard", () => {
   it("returns 401, not 403, when nobody is signed in", async () => {
     const res = await app.inject({ method: "GET", url: "/api/test/members-only" });
     expect(res.statusCode).toBe(401);
+  });
+});
+
+describe("login rate limit", () => {
+  // Own app: its counters start at zero, whatever the other tests did from the same IP.
+  const limited = buildApp({ pool, clock });
+  afterAll(() => limited.close());
+  const attempt = (email: string, password: string) =>
+    limited.inject({ method: "POST", url: "/api/auth/login", payload: { email, password } });
+
+  it("blocks the 11th attempt for one email, even with the right password, but not other emails", async () => {
+    await signup(mira);
+    await signup(leo);
+    for (let i = 0; i < 10; i++) expect((await attempt(mira.email, "wrong password")).statusCode).toBe(401);
+    const blocked = await attempt(mira.email.toUpperCase(), mira.password);
+    expect(blocked.statusCode).toBe(429);
+    expect(blocked.json()).toEqual({
+      error: { code: "TOO_MANY_ATTEMPTS", message: "Too many login attempts. Please wait a few minutes and try again." },
+    });
+    expect((await attempt(leo.email, leo.password)).statusCode).toBe(200);
+  });
+});
+
+describe("cross-site origin guard", () => {
+  const post = (headers: Record<string, string>) =>
+    app.inject({ method: "POST", url: "/api/auth/signup", headers, payload: { ...leo } });
+
+  it("refuses a write whose Origin host differs from Host", async () => {
+    const res = await post({ host: "app.example.test", origin: "https://evil.example.test" });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.code).toBe("FORBIDDEN_ORIGIN");
+    expect((await pool.query("select 1 from users")).rowCount).toBe(0);
+  });
+
+  it("refuses an opaque Origin", async () => {
+    expect((await post({ host: "app.example.test", origin: "null" })).statusCode).toBe(403);
+  });
+
+  it("allows a matching Origin and a missing Origin", async () => {
+    expect((await post({ host: "app.example.test", origin: "https://app.example.test" })).statusCode).toBe(201);
+    await pool.query("TRUNCATE users, auth_sessions CASCADE");
+    expect((await post({})).statusCode).toBe(201);
+  });
+
+  it("does not check reads", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/health", headers: { host: "a.test", origin: "https://b.test" } });
+    expect(res.statusCode).toBe(200);
   });
 });
 

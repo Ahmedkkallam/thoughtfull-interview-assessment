@@ -29,6 +29,7 @@ services:
   api:
     build: .
     command: npm run start -w apps/api
+    restart: unless-stopped
     environment:
       <<: *app-env
       API_PORT: "3000"
@@ -41,6 +42,7 @@ services:
   worker:
     build: .
     command: npm run worker -w apps/api
+    restart: unless-stopped
     environment: *app-env
     depends_on:
       migrate:

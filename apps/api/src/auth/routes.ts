@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { Clock } from "../clock.ts";
 import type { Db } from "../db/client.ts";
@@ -8,7 +8,7 @@ import { HttpError } from "../errors.ts";
 import { requireAuth } from "./guards.ts";
 import { hashPassword, verifyPassword } from "./password.ts";
 import { SESSION_COOKIE, clearSessionCookie, endSession, setSessionCookie, startSession, type AuthUser } from "./sessions.ts";
-import { isValidTimeZone } from "./timezone.ts";
+import { canonicalTimeZone, isValidTimeZone } from "./timezone.ts";
 
 // z.object drops unknown keys, so a client-sent id or other extra field never reaches the database.
 const signupBody = z.object({
@@ -35,7 +35,13 @@ export function authRoutes(app: FastifyInstance, { db, clock }: { db: Db; clock:
     const { user, token } = await db.transaction(async (tx) => {
       const [user] = await tx
         .insert(users)
-        .values({ ...body, passwordHash })
+        .values({
+          name: body.name,
+          email: body.email,
+          role: body.role,
+          timezone: canonicalTimeZone(body.timezone),
+          passwordHash,
+        })
         .returning(publicUser);
       return { user: user!, token: await startSession(tx, user!.id, clock.now()) };
     });
@@ -43,7 +49,21 @@ export function authRoutes(app: FastifyInstance, { db, clock }: { db: Db; clock:
     return reply.status(201).send(user);
   });
 
-  app.post("/api/auth/login", async (req, reply) => {
+  // 10 attempts per 15 minutes per IP + email: one account cannot be guessed endlessly.
+  // Runs at preHandler (not the default onRequest) because the key needs the parsed body.
+  const loginLimit = {
+    max: 10,
+    timeWindow: "15 minutes",
+    hook: "preHandler" as const,
+    keyGenerator: (req: FastifyRequest) => {
+      const email = (req.body as { email?: unknown } | null)?.email;
+      return `${req.ip}|${typeof email === "string" ? email.toLowerCase() : ""}`;
+    },
+    errorResponseBuilder: () =>
+      new HttpError(429, "TOO_MANY_ATTEMPTS", "Too many login attempts. Please wait a few minutes and try again."),
+  };
+
+  app.post("/api/auth/login", { config: { rateLimit: loginLimit } }, async (req, reply) => {
     const { email, password } = loginBody.parse(req.body);
     const [row] = await db
       .select({ ...publicUser, passwordHash: users.passwordHash })

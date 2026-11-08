@@ -5,7 +5,16 @@ import { randomBytes, scrypt, timingSafeEqual, type ScryptOptions } from "node:c
 // Production cost is 2^15. Tests lower it via SCRYPT_N because they sign up hundreds of users;
 // stored hashes carry their own N, so verification works at any cost.
 export const DEFAULT_N = 2 ** 15;
-const N = Number(process.env.SCRYPT_N) || DEFAULT_N;
+// Only a power of 2 from 2^10 to 2^20 is valid; a typo fails at startup instead of silently weakening hashes.
+export function parseScryptN(value: string | undefined): number {
+  if (value === undefined || value === "") return DEFAULT_N;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 2 ** 10 || n > 2 ** 20 || (n & (n - 1)) !== 0) {
+    throw new Error(`SCRYPT_N must be a power of 2 between 1024 and 1048576, got "${value}"`);
+  }
+  return n;
+}
+const N = parseScryptN(process.env.SCRYPT_N);
 const r = 8;
 const p = 1;
 const KEY_LENGTH = 64;
