@@ -1,9 +1,15 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Navigate, Outlet, useNavigate } from "react-router";
+import { Navigate, NavLink, Outlet, useNavigate } from "react-router";
 import { api } from "./api.ts";
-import { useMe } from "./auth.ts";
+import { useMe, type Me } from "./auth.ts";
 
 const roleLabel = { member: "Member", professional: "Professional" };
+
+// Links per role; only pages that exist are listed.
+const navLinks: Record<Me["role"], { to: string; label: string }[]> = {
+  member: [],
+  professional: [{ to: "/availability", label: "My hours" }],
+};
 
 // Signed-out visitors are sent to /login. The API still checks every request itself.
 export function RequireAuth() {
@@ -27,6 +33,14 @@ export function RequireAuth() {
     <>
       <header className="header">
         <strong>ThoughtFull</strong>
+        <nav aria-label="Main" className="nav">
+          <NavLink to="/">Home</NavLink>
+          {navLinks[me.data.role].map((l) => (
+            <NavLink key={l.to} to={l.to}>
+              {l.label}
+            </NavLink>
+          ))}
+        </nav>
         <span>
           {me.data.name} ({roleLabel[me.data.role]})
         </span>

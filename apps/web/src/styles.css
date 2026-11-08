@@ -14,3 +14,9 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 a { color: #1d4e89; }
 :focus-visible { outline: 3px solid #f0a202; outline-offset: 2px; }
 .error { color: #9b1c1c; margin: 0; }
+.range { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.5rem; margin-bottom: 0.5rem; }
+.range label { display: flex; flex-direction: column; font-size: 0.9rem; }
+.range .error { flex-basis: 100%; }
+fieldset > button { margin-top: 0.25rem; }
+input[aria-invalid="true"] { border-color: #9b1c1c; border-width: 2px; }
+.nav { display: flex; gap: 1rem; }

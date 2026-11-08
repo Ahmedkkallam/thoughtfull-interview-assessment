@@ -118,3 +118,68 @@ test("a signed-in user visiting the login page is sent home", async () => {
   expect(await screen.findByText("Welcome, Amira")).toBeTruthy();
   expect(router.state.location.pathname).toBe("/");
 });
+
+const pro = { ...user, role: "professional", name: "Dr. Mira" };
+const monday = { weekday: 1, start: "09:00", end: "12:00" };
+
+test("the editor shows the saved ranges for each day in the professional's timezone", async () => {
+  mockApi({ "GET /api/me": () => json(pro), "GET /api/availability": () => json([monday, { weekday: 1, start: "13:00", end: "17:00" }]) });
+  renderAt("/availability");
+  expect(((await screen.findByLabelText("Monday range 1 start")) as HTMLInputElement).value).toBe("09:00");
+  expect((screen.getByLabelText("Monday range 2 end") as HTMLInputElement).value).toBe("17:00");
+  expect(screen.queryByLabelText("Tuesday range 1 start")).toBeNull();
+  expect(screen.getByText(/Times are in your timezone \(Europe\/London\)/)).toBeTruthy();
+});
+
+test("adding a range and saving sends the whole week", async () => {
+  const fetchMock = mockApi({
+    "GET /api/me": () => json(pro),
+    "GET /api/availability": () => json([monday]),
+    "PUT /api/availability": () => json([]),
+  });
+  renderAt("/availability");
+  await screen.findByLabelText("Monday range 1 start");
+  fireEvent.click(screen.getByRole("button", { name: "Add hours for Tuesday" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save week" }));
+  expect(await screen.findByText("Saved")).toBeTruthy();
+  const call = fetchMock.mock.calls.find(([, i]) => i?.method === "PUT")!;
+  expect(JSON.parse(call[1]!.body as string)).toEqual({
+    hours: [monday, { weekday: 2, start: "09:00", end: "17:00" }],
+  });
+});
+
+test("removing a range leaves it out of the saved week", async () => {
+  const fetchMock = mockApi({
+    "GET /api/me": () => json(pro),
+    "GET /api/availability": () => json([monday, { weekday: 3, start: "10:00", end: "11:00" }]),
+    "PUT /api/availability": () => json([]),
+  });
+  renderAt("/availability");
+  await screen.findByLabelText("Monday range 1 start");
+  fireEvent.click(screen.getByRole("button", { name: "Remove Monday range 1" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save week" }));
+  await screen.findByText("Saved");
+  const call = fetchMock.mock.calls.find(([, i]) => i?.method === "PUT")!;
+  expect(JSON.parse(call[1]!.body as string)).toEqual({ hours: [{ weekday: 3, start: "10:00", end: "11:00" }] });
+});
+
+test("overlapping hours show the server's message", async () => {
+  const message = "weekday 1: 09:00-12:00 overlaps 11:00-13:00";
+  mockApi({
+    "GET /api/me": () => json(pro),
+    "GET /api/availability": () => json([monday]),
+    "PUT /api/availability": () => json({ error: { code: "INVALID_HOURS", message } }, 400),
+  });
+  renderAt("/availability");
+  await screen.findByLabelText("Monday range 1 start");
+  fireEvent.click(screen.getByRole("button", { name: "Save week" }));
+  expect((await screen.findByRole("alert")).textContent).toBe(message);
+});
+
+test("a member does not see the hours editor", async () => {
+  const fetchMock = mockApi({ "GET /api/me": () => json(user) });
+  renderAt("/availability");
+  expect(await screen.findByText("This page is for professionals.")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Save week" })).toBeNull();
+  expect(fetchMock.mock.calls.some(([p]) => p === "/api/availability")).toBe(false);
+});
