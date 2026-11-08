@@ -82,10 +82,66 @@ The brief leaves these open; each answer is what I think is right for the person
 - **Professional sign-up:** anyone can register as a professional here. A real product verifies credentials first (out of scope, see production notes).
 
 ## Known limitations
-_To be written._
+These are the things I know are not finished or not strong enough for real use.
+
+**Accounts and sign-in**
+- Sign-up answers 409 `EMAIL_TAKEN` for an existing email (`apps/api/src/errors.ts`), so anyone can test whether an address has an account. Login does not leak this (D16), sign-up does. A fix needs email verification, which the brief puts out of scope.
+- Anyone can register as a professional. There is no check of credentials.
+- The login rate limit (10 attempts per 15 minutes per IP + email, `apps/api/src/auth/routes.ts`) keeps its counters in the memory of one API process: a restart resets them, and two API copies each count separately. It is also not proxy-aware: Fastify is created without `trustProxy` (`apps/api/src/app.ts`), so behind the Vite proxy or a load balancer every client shares the proxy's IP. The email part of the key still separates accounts.
+- Sign-up is not rate-limited, on purpose for now: the tests create many users from one address, and a real limiter needs the proxy-aware IP above.
+- Expired login sessions are ignored (`findSessionUser` returns null) but their rows in `auth_sessions` are never deleted.
+- The session cookie is `Secure` only when `NODE_ENV=production` (`apps/api/src/auth/sessions.ts`). Docker Compose serves plain http and does not set it.
+- No timezone change after sign-up (see the assumptions).
+
+**Scheduling**
+- Blocked dates and a minimum booking notice are not built. `generateSlots` in `packages/domain/src/slots.ts` already accepts `blockedDays` and `minNoticeMin` and has tests, but the API always passes no blocked days and `minNoticeMin: 0` (`apps/api/src/professionals/slots.ts`), and there is no table or screen for them.
+- The 24-hour hint in the web app (the disabled Cancel and Reschedule buttons in `apps/web/src/Sessions.tsx`) uses the browser's clock. It is only a hint; the server decides with its own clock (D12).
+- For the demo professionals' zones (London, New York, Singapore) the live 28-day window contains no clock change until it reaches 14 March 2027 (New York) or 28 March 2027 (London), so a demo run in November 2026 cannot show daylight saving on screen. The behaviour is proven with pinned dates in `packages/domain/src/slots.test.ts`, `reminders.test.ts` and `rules.test.ts`, and in two API tests (`professionals.int.test.ts` for the London spring-forward slot, `cancel-reschedule.int.test.ts` for the 24-hour rule across it).
+
+**Reminders and notifications**
+- Reminders only exist as in-app notifications; there is no email, SMS or push (out of scope).
+- Reminders of a session that started while the worker was down stay `pending` forever. That is intended (D29: never deliver after the start), but nothing cleans those rows up.
+- The worker polls every 5 seconds and the web app polls notifications every 30 seconds (`apps/web/src/Notifications.tsx`), so a reminder can show up to about 35 seconds after it is due. There is no push channel.
+
+**Scale and delivery**
+- No pagination: the professionals list and "My sessions" return everything; notifications return the newest 50 and older ones cannot be reached.
+- Docker Compose runs the Vite development server for the web container. That is fine for a demo, not for production (no static build, no caching, no compression).
+- Tests: the API rules are tested against a real Postgres, and the web app has only a few component tests (`apps/web/src/App.test.tsx`, `format.test.ts`). I walked the screens by hand in a browser; there is no automated browser test.
 
 ## What I would do next with more time
-_To be written._
+In the order I would do them:
+1. **Blocked dates and a minimum booking notice.** The domain function already supports both; it needs a `blocked_dates` table (local dates in the professional's zone), a notice setting, API routes and a screen.
+2. **Real reminders by email or SMS** through a provider, sent by the same worker with the reminder id as the idempotency key (see the production section for why the delivery guarantee changes).
+3. **A cleanup job** that deletes expired `auth_sessions` and marks stale pending reminders (their session has started) as cancelled.
+4. **Change of timezone** in the account, with a note that stored times do not move and only the display changes.
+5. **Pagination** for sessions and notifications, and a "mark all read" action.
+6. **An audit log** of who created, viewed, cancelled or moved a session.
+7. **End-to-end browser tests (Playwright)** for the two flows I checked by hand: book, then cancel or reschedule, in two timezones.
+8. **CI** that runs lint, typecheck and `npm test` on every push.
+9. A production build of the web app served as static files instead of the Vite dev server.
 
 ## Running this safely in production for a healthcare product
-_To be written._
+Mental health data is sensitive personal data: the fact that someone sees a counsellor is itself private. This prototype protects the basics (hashed passwords, allow-listed fields, access checks on the backend, rules enforced in the database), but a real launch needs the following. I list what I would do and why, not what is built.
+
+**Protect the data**
+- **Encryption in transit and at rest.** HTTPS everywhere with `Secure` cookies and HSTS; encrypted database volumes and backups; keys and secrets (database URL, any provider keys) in a secrets manager, never in `.env` files on servers. Column-level encryption is worth considering for anything free-text if notes are ever added.
+- **Data residency.** Host the database and backups in the region the members live in (or the one the contract requires), and keep logs and backups in the same region. Members and professionals sit in several countries, so I would confirm per country before choosing regions.
+- **Consent and retention (PDPA, GDPR, HIPAA-style).** Record what each person agreed to and when; let members export and delete their data; define how long sessions, notifications and logs are kept and delete them on schedule. Today nothing is ever deleted: cancelling only changes a status.
+- **Minimal data in notifications.** An email or SMS must say only "you have a session soon, open the app". No professional name, no time details, no reason: a lock screen or a shared mailbox must not reveal that someone is in therapy. The in-app notification text today (`apps/web/src/Notifications.tsx`) is fine behind a login, not for email.
+
+**Know who did what**
+- **Audit logs.** Append-only records of who viewed or changed a session or a profile, from where and when, kept apart from the application database and protected from edits.
+- **Verify professionals.** Check credentials before a professional account can appear in the list; today anyone can sign up as one.
+- **MFA for professionals** (and offered to members), with session lists the user can review and revoke. Review who has access to production data on a schedule.
+
+**Keep it available and abuse-resistant**
+- **Rate limiting with a shared store** (Redis or the gateway) for login, sign-up, booking and the slot list, with the real client IP behind the load balancer (`trustProxy`), plus lockout alerts and bot protection on sign-up. This replaces the in-memory limiter in `apps/api/src/auth/routes.ts`.
+- **Monitoring and alerting.** Metrics for API errors and latency, database health, and above all the reminder worker: alert on the age of the oldest due-but-undelivered reminder (the `reminders_pending` index in `0005_reminders.sql` makes that query cheap), and on the worker not running.
+- **Backups and restore drills.** Automatic backups with point-in-time recovery, and a restore that is actually practised, because a backup nobody has restored is a guess.
+- **More than one worker.** The worker is already safe to run several times: `FOR UPDATE SKIP LOCKED` (D26, `apps/api/src/reminders/deliver.ts`) means two workers never take the same reminder.
+- **Delivery to outside providers is at-least-once.** Sending an email cannot join the database transaction, so a crash after sending and before committing means the reminder is sent again. I would send with the reminder id as the idempotency key so the provider drops the duplicate, and accept that on rare failures someone gets two messages rather than none (a missed reminder is the worse outcome here).
+
+**Check it**
+- **Penetration testing** by an outside party before launch and after big changes, dependency and container scanning in CI, and a plan for fixing what they find.
+- **Incident response.** A written plan for a data breach (who decides, who is told, the legal notice deadlines such as 72 hours under GDPR), and a way to revoke every login session at once; the server-side session design (D13) makes that a single `DELETE`.
+- **Access control tests stay in CI.** The tests that prove nobody can see or change another person's session (`apps/api/test/booking.int.test.ts`, `cancel-reschedule.int.test.ts`) must keep passing on every change.
