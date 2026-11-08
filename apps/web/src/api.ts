@@ -15,5 +15,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     const body = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null;
     throw new ApiError(res.status, body?.error?.code ?? "unknown", body?.error?.message ?? `Request failed (${res.status})`);
   }
-  return (await res.json()) as T;
+  // 204 and empty bodies (logout) have nothing to parse.
+  const text = res.status === 204 ? "" : await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }

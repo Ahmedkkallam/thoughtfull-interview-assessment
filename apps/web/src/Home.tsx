@@ -1,19 +1,16 @@
-import { useQuery } from "@tanstack/react-query";
-import { api } from "./api.ts";
-
-export function ApiStatus() {
-  const health = useQuery({ queryKey: ["health"], queryFn: () => api<{ ok: boolean }>("/api/health") });
-
-  if (health.isPending) return <p role="status">API status: checking…</p>;
-  if (health.isError) return <p role="alert">API status: unavailable ({health.error.message})</p>;
-  return <p role="status">API status: {health.data.ok ? "ok" : "not ok"}</p>;
-}
+import { useOutletContext } from "react-router";
+import type { Me } from "./auth.ts";
 
 export function Home() {
+  const me = useOutletContext<Me>();
   return (
-    <main>
-      <h1>ThoughtFull</h1>
-      <ApiStatus />
-    </main>
+    <>
+      <h1>Welcome, {me.name}</h1>
+      {me.role === "member" ? (
+        <p>This is your space to find a professional and book a session.</p>
+      ) : (
+        <p>This is your space to set your working hours and see your sessions.</p>
+      )}
+    </>
   );
 }

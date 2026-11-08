@@ -1,0 +1,16 @@
+:root { font-family: system-ui, sans-serif; color: #1f2933; background: #f7f9fb; line-height: 1.5; }
+body { margin: 0; }
+.page { max-width: 40rem; margin: 0 auto; padding: 1rem; }
+.narrow { max-width: 26rem; }
+.header { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: 0.75rem 1rem; background: #fff; border-bottom: 1px solid #cbd2d9; }
+form { display: flex; flex-direction: column; gap: 0.5rem; }
+label { font-weight: 600; }
+label.inline { display: flex; align-items: center; gap: 0.5rem; font-weight: 400; min-height: 2.75rem; }
+input:not([type="radio"]), select { font: inherit; padding: 0.6rem; border: 1px solid #52606d; border-radius: 6px; background: #fff; }
+fieldset { border: 1px solid #cbd2d9; border-radius: 6px; }
+button { font: inherit; padding: 0.6rem 1rem; min-height: 2.75rem; border: 1px solid #1d4e89; border-radius: 6px; background: #1d4e89; color: #fff; cursor: pointer; }
+.header button { background: #fff; color: #1d4e89; }
+button:disabled { opacity: 0.6; cursor: not-allowed; }
+a { color: #1d4e89; }
+:focus-visible { outline: 3px solid #f0a202; outline-offset: 2px; }
+.error { color: #9b1c1c; margin: 0; }
