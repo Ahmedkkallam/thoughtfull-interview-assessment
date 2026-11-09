@@ -204,7 +204,7 @@ function WeekForm({ initial }: { initial: Hours[] }) {
                                   value={r.start}
                                   onChange={(e) => change(day, i, "start", e.target.value)}
                                   required
-                                  className="block min-h-11 w-full min-w-0 rounded-lg border border-stone-300 bg-white px-2 text-stone-900 tabular-nums hover:border-stone-400 focus:border-brand-600 sm:w-32 sm:px-3"
+                                  className="block min-h-11 w-full min-w-0 rounded-lg border border-stone-300 bg-white px-2 text-stone-900 tabular-nums max-sm:px-1.5 max-sm:text-sm hover:border-stone-400 focus:border-brand-600 sm:w-32 sm:px-3"
                                 />
                               </label>
                               <span aria-hidden="true" className="text-stone-400">
@@ -220,7 +220,7 @@ function WeekForm({ initial }: { initial: Hours[] }) {
                                   onChange={(e) => change(day, i, "end", e.target.value)}
                                   required
                                   aria-invalid={backwards}
-                                  className="block min-h-11 w-full min-w-0 rounded-lg border border-stone-300 bg-white px-2 text-stone-900 tabular-nums hover:border-stone-400 focus:border-brand-600 aria-invalid:border-rose-600 aria-invalid:bg-rose-50 sm:w-32 sm:px-3"
+                                  className="block min-h-11 w-full min-w-0 rounded-lg border border-stone-300 bg-white px-2 text-stone-900 tabular-nums max-sm:px-1.5 max-sm:text-sm hover:border-stone-400 focus:border-brand-600 aria-invalid:border-rose-600 aria-invalid:bg-rose-50 sm:w-32 sm:px-3"
                                 />
                               </label>
                               <Button
