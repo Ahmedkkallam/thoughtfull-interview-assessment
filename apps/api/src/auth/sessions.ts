@@ -7,7 +7,7 @@ import { authSessions, users } from "../db/schema.ts";
 export const SESSION_COOKIE = "session";
 const SESSION_DAYS = 7;
 
-export type AuthUser = { id: string; role: "member" | "professional"; name: string; timezone: string };
+export type AuthUser = { id: string; role: "member" | "professional"; name: string; timezone: string; emailReminders: boolean };
 
 // Only the hash is stored, so a copy of the table cannot be replayed as cookies.
 export function hashToken(token: string): Buffer {
@@ -31,13 +31,14 @@ export async function findSessionUser(db: Db, token: string, now: Date): Promise
       role: users.role,
       name: users.name,
       timezone: users.timezone,
+      emailReminders: users.emailReminders,
       expiresAt: authSessions.expiresAt,
     })
     .from(authSessions)
     .innerJoin(users, eq(users.id, authSessions.userId))
     .where(eq(authSessions.tokenHash, hashToken(token)));
   if (!row || row.expiresAt <= now) return null;
-  return { id: row.id, role: row.role, name: row.name, timezone: row.timezone };
+  return { id: row.id, role: row.role, name: row.name, timezone: row.timezone, emailReminders: row.emailReminders };
 }
 
 export async function endSession(db: Db, token: string): Promise<void> {

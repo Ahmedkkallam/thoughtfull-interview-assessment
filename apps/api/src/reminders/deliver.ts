@@ -1,18 +1,19 @@
 import { and, asc, eq, gt, inArray, isNull, lte } from "drizzle-orm";
 import type { Db } from "../db/client.ts";
-import { notifications, reminders, sessions } from "../db/schema.ts";
+import { emailOutbox, notifications, reminders, sessions, users } from "../db/schema.ts";
+import { reminderEmail } from "../email/content.ts";
 
 const BATCH_SIZE = 50;
 
 /**
  * Turns every due reminder into an in-app notification, exactly once, and returns how many it delivered.
- * Each batch is one transaction: the notifications and `delivered_at` commit together or not at all,
- * so a crash at any point either leaves the reminder pending (retried next run) or fully delivered.
+ * Each batch is one transaction: the notifications, their queued emails and `delivered_at` commit together
+ * or not at all, so a crash at any point either leaves the reminder pending (retried next run) or fully delivered.
  */
 export async function deliverDueReminders(
   db: Db,
   now: Date,
-  // Test-only: runs after the notifications are inserted and before the commit, so a test can
+  // Test-only: runs after the notifications and emails are inserted and before the commit, so a test can
   // throw here to simulate the process dying mid-delivery, or pause here to hold the row locks.
   opts: { afterInsert?: () => void | Promise<void> } = {},
 ): Promise<number> {
@@ -25,9 +26,14 @@ export async function deliverDueReminders(
           sessionId: reminders.sessionId,
           recipientId: reminders.recipientId,
           kind: reminders.kind,
+          startsAt: sessions.startsAt,
+          email: users.email,
+          timezone: users.timezone,
+          emailReminders: users.emailReminders,
         })
         .from(reminders)
         .innerJoin(sessions, eq(sessions.id, reminders.sessionId))
+        .innerJoin(users, eq(users.id, reminders.recipientId))
         .where(
           and(
             isNull(reminders.deliveredAt),
@@ -57,7 +63,19 @@ export async function deliverDueReminders(
           })),
         )
         .onConflictDoNothing({ target: notifications.reminderId })
-        .returning({ id: notifications.id });
+        .returning({ id: notifications.id, reminderId: notifications.reminderId });
+
+      // Queue the email in this same transaction: it commits with the notification or not at all.
+      const byId = new Map(due.map((r) => [r.id, r]));
+      const emails = inserted.flatMap(({ id, reminderId }) => {
+        const r = byId.get(reminderId!)!;
+        if (!r.emailReminders) return [];
+        const { subject, body } = reminderEmail(r.kind, r.startsAt, r.timezone);
+        return [{ notificationId: id, toEmail: r.email, subject, body, createdAt: now, nextAttemptAt: now }];
+      });
+      if (emails.length > 0) {
+        await tx.insert(emailOutbox).values(emails).onConflictDoNothing({ target: emailOutbox.notificationId });
+      }
       await opts.afterInsert?.();
       await tx
         .update(reminders)

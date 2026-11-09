@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { Clock } from "../clock.ts";
@@ -21,11 +21,19 @@ const signupBody = z.object({
 
 const loginBody = z.object({ email: z.string(), password: z.string() });
 
+const preferencesBody = z.object({ emailReminders: z.boolean() });
+
 // Same error for an unknown email and a wrong password, so login does not reveal who has an account.
 const invalidCredentials = () => new HttpError(401, "INVALID_CREDENTIALS", "Email or password is incorrect");
 
 // The only user fields any auth response exposes.
-const publicUser = { id: users.id, role: users.role, name: users.name, timezone: users.timezone };
+const publicUser = {
+  id: users.id,
+  role: users.role,
+  name: users.name,
+  timezone: users.timezone,
+  emailReminders: users.emailReminders,
+};
 
 export function authRoutes(app: FastifyInstance, { db, clock }: { db: Db; clock: Clock }) {
   app.post("/api/auth/signup", async (req, reply) => {
@@ -77,7 +85,13 @@ export function authRoutes(app: FastifyInstance, { db, clock }: { db: Db; clock:
     if (!(await verifyPassword(password, row.passwordHash))) throw invalidCredentials();
     const token = await startSession(db, row.id, clock.now());
     setSessionCookie(reply, token);
-    const user: AuthUser = { id: row.id, role: row.role, name: row.name, timezone: row.timezone };
+    const user: AuthUser = {
+      id: row.id,
+      role: row.role,
+      name: row.name,
+      timezone: row.timezone,
+      emailReminders: row.emailReminders,
+    };
     return user;
   });
 
@@ -89,4 +103,11 @@ export function authRoutes(app: FastifyInstance, { db, clock }: { db: Db; clock:
   });
 
   app.get("/api/me", { preHandler: requireAuth }, async (req) => req.user);
+
+  // Changes only the signed-in user's row: the id comes from the session, never from the body.
+  app.patch("/api/me/preferences", { preHandler: requireAuth }, async (req) => {
+    const { emailReminders } = preferencesBody.parse(req.body);
+    const [user] = await db.update(users).set({ emailReminders }).where(eq(users.id, req.user!.id)).returning(publicUser);
+    return user;
+  });
 }

@@ -63,7 +63,13 @@ describe("sign up", () => {
     const res = await signup(mira);
     expect(res.statusCode).toBe(201);
     const body = res.json();
-    expect(body).toEqual({ id: expect.any(String), name: mira.name, role: "professional", timezone: "Europe/London" });
+    expect(body).toEqual({
+      id: expect.any(String),
+      name: mira.name,
+      role: "professional",
+      timezone: "Europe/London",
+      emailReminders: true,
+    });
 
     const cookie = res.cookies.find((c) => c.name === "session")!;
     expect(cookie).toMatchObject({ httpOnly: true, sameSite: "Lax", path: "/" });

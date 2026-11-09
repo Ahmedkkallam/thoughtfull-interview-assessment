@@ -17,6 +17,7 @@
     "@thoughtfull/domain": "0.0.0",
     "drizzle-orm": "0.45.4",
     "fastify": "5.12.8",
+    "nodemailer": "10.4.0",
     "pg": "8.23.1",
     "zod": "4.6.7"
   },

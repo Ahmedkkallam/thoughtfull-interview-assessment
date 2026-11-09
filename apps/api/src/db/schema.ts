@@ -1,8 +1,10 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   customType,
   index,
+  integer,
   pgTable,
   smallint,
   text,
@@ -29,6 +31,8 @@ export const users = pgTable(
     passwordHash: text("password_hash").notNull(),
     // IANA zone name, validated at sign-up.
     timezone: text("timezone").notNull(),
+    // On by default: reminders are emailed as well as shown in the app; the user can turn it off.
+    emailReminders: boolean("email_reminders").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -156,4 +160,28 @@ export const notifications = pgTable(
     ),
     index("notifications_user_created_idx").on(t.userId, t.createdAt.desc()),
   ],
+);
+
+// Emails waiting to go out (src/email/send.ts). Queued in the same transaction as the in-app
+// reminder, so a reminder is never shown without its email being queued, or the reverse.
+export const emailOutbox = pgTable(
+  "email_outbox",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // UNIQUE: one notification is emailed at most once.
+    notificationId: uuid("notification_id")
+      .notNull()
+      .unique("email_outbox_notification_id_key")
+      .references(() => notifications.id),
+    toEmail: text("to_email").notNull(),
+    subject: text("subject").notNull(),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  // Only unsent emails are ever looked up by the sender.
+  (t) => [index("email_outbox_unsent").on(t.nextAttemptAt).where(sql`${t.sentAt} is null`)],
 );

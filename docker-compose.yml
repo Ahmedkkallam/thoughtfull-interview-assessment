@@ -43,10 +43,21 @@ services:
     build: .
     command: npm run worker -w apps/api
     restart: unless-stopped
-    environment: *app-env
+    environment:
+      <<: *app-env
+      SMTP_URL: smtp://mailpit:1025
     depends_on:
       migrate:
         condition: service_completed_successfully
+      mailpit:
+        condition: service_started
+
+  # Local mail catcher: reminder emails land here (web UI on http://localhost:8025), never on the internet.
+  mailpit:
+    image: axllent/mailpit:v1.33.1
+    ports:
+      - "8025:8025"
+      - "1025:1025"
 
   web:
     build: .
