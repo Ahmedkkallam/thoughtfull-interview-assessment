@@ -84,6 +84,11 @@ The brief leaves these open; each answer is what I think is right for the person
 - **Timezone change after sign-up:** not offered in this version. Stored times are UTC, so a change would only change how times are displayed.
 - **Professional sign-up:** anyone can register as a professional here. A real product verifies credentials first (out of scope, see production notes).
 
+## Time off and minimum notice
+- **D36 Time off is whole local days** in the professional's own zone (`blocked_dates`, `apps/api/src/time-off/routes.ts`): "Monday 30 November in London" stays that day whatever the viewer's zone, so a Singapore member also loses the London-Monday slots that show on their Tuesday. Members see a blocked day simply as having no free times, never why. Blocking keeps sessions already booked (the same rule as changing hours) and tells the professional how many there are; the dashboard lists upcoming days off with that warning.
+- **D37 Blocking and booking the same day cannot both win.** Blocking locks the professional's row; booking and reschedule check the day again inside their transaction after locking the same row, so one always sees the other. A race test runs both at once.
+- **D38 Minimum notice is per professional,** from a fixed list (none, 1, 2, 4, 12, 24 or 48 hours, held by a CHECK). The slot list and the booking check read the same setting with the server clock. Unlike time off, the notice is public, so a start inside it gets 422 `TOO_SOON` with the reason. Demo professionals start at 2 hours, the brief's example.
+
 ## Hosting
 - **D35 No hosted demo, on purpose.** The brief makes a deployed link optional. The app needs an always-on worker (reminders every 5 seconds), one origin for the session cookie and the cross-site check, and a mail inbox that should not be public; a serverless host such as Vercel fits none of these without changes. `docker compose up` runs the whole stack locally in one command instead. The production path is a Docker-friendly host running the same services, with the API serving the built web app on one address (see the README section "Why there is no hosted demo").
 
@@ -100,7 +105,6 @@ These are the things I know are not finished or not strong enough for real use.
 - No timezone change after sign-up (see the assumptions).
 
 **Scheduling**
-- Blocked dates and a minimum booking notice are not built. `generateSlots` in `packages/domain/src/slots.ts` already accepts `blockedDays` and `minNoticeMin` and has tests, but the API always passes no blocked days and `minNoticeMin: 0` (`apps/api/src/professionals/slots.ts`), and there is no table or screen for them.
 - The 24-hour hint in the web app (the disabled Cancel and Reschedule buttons in `apps/web/src/Sessions.tsx`) uses the browser's clock. It is only a hint; the server decides with its own clock (D12).
 - For the demo professionals' zones (London, New York, Singapore) the live 28-day window contains no clock change until it reaches 14 March 2027 (New York) or 28 March 2027 (London), so a demo run in November 2026 cannot show daylight saving on screen. The behaviour is proven with pinned dates in `packages/domain/src/slots.test.ts`, `reminders.test.ts` and `rules.test.ts`, and in two API tests (`professionals.int.test.ts` for the London spring-forward slot, `cancel-reschedule.int.test.ts` for the 24-hour rule across it).
 
@@ -116,15 +120,14 @@ These are the things I know are not finished or not strong enough for real use.
 
 ## What I would do next with more time
 In the order I would do them:
-1. **Blocked dates and a minimum booking notice.** The domain function already supports both; it needs a `blocked_dates` table (local dates in the professional's zone), a notice setting, API routes and a screen.
-2. **A real email provider and SMS**, plugged into the existing outbox and sender with the outbox id as the idempotency key, plus alerting on emails that gave up.
-3. **A cleanup job** that deletes expired `auth_sessions` and marks stale pending reminders (their session has started) as cancelled.
-4. **Change of timezone** in the account, with a note that stored times do not move and only the display changes.
-5. **Pagination** for sessions and notifications, and a "mark all read" action.
-6. **An audit log** of who created, viewed, cancelled or moved a session.
-7. **End-to-end browser tests (Playwright)** for the two flows I checked by hand: book, then cancel or reschedule, in two timezones.
-8. **CI** that runs lint, typecheck and `npm test` on every push.
-9. A production build of the web app served as static files instead of the Vite dev server.
+1. **A real email provider and SMS**, plugged into the existing outbox and sender with the outbox id as the idempotency key, plus alerting on emails that gave up.
+2. **A cleanup job** that deletes expired `auth_sessions` and marks stale pending reminders (their session has started) as cancelled.
+3. **Change of timezone** in the account, with a note that stored times do not move and only the display changes.
+4. **Pagination** for sessions and notifications, and a "mark all read" action.
+5. **An audit log** of who created, viewed, cancelled or moved a session.
+6. **End-to-end browser tests (Playwright)** for the two flows I checked by hand: book, then cancel or reschedule, in two timezones.
+7. **CI** that runs lint, typecheck and `npm test` on every push.
+8. A production build of the web app served as static files instead of the Vite dev server.
 
 ## Running this safely in production for a healthcare product
 Mental health data is sensitive personal data: the fact that someone sees a counsellor is itself private. This prototype protects the basics (hashed passwords, allow-listed fields, access checks on the backend, rules enforced in the database), but a real launch needs the following. I list what I would do and why, not what is built.

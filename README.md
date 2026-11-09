@@ -99,6 +99,8 @@ This walks through the cross-timezone case.
 7. As Lina, open the **Notifications** page (also in the header). Book a session less than 24 hours ahead and the **Cancel** and **Reschedule** buttons are disabled with "Changes are possible up to 24 hours before the start".
 8. As Mira, cancel a session (she can at any time). Lina's notifications list shows that it was cancelled, and the session appears under Past as "Cancelled by the professional".
 
+As **Dr. Mira Okafor**, **My hours** also has **Time off**: block a day (she already has a training day about three weeks ahead) and it disappears from members' calendars; if sessions are still booked that day, a warning says so, and the dashboard lists upcoming days off. **Settings** has the **booking notice** (the demo professionals ask for 2 hours): members see "Books at least 2 hours ahead" and cannot book a time that starts sooner.
+
 Email reminders (on by default, switchable in **Settings**) go only to the local Mailpit inbox at http://localhost:8025, never to real addresses; they say only that a session is coming up and when. A sample is in [docs/screenshots/desktop-email.png](docs/screenshots/desktop-email.png).
 
 Reminders appear in the Notifications list when they are due: the 24-hour one 24 hours before the start, the 1-hour one an hour before. A reminder whose time had already passed at booking is not created. The worker checks every 5 seconds and the page refreshes every 30, so allow up to about 35 seconds. To see one without waiting a day, book the soonest free slot: if it starts in 90 minutes, its 1-hour reminder arrives after 30 minutes. A slot that starts in under an hour gets no reminders at all.
