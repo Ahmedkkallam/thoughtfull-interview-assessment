@@ -1,17 +1,30 @@
 # AI usage
 
 ## Tools
-I used Claude Code (Anthropic's command-line coding assistant) with two models: Claude Opus for planning, design questions, the hard parts (locking, daylight saving, reminder delivery) and code reviews, and Claude Sonnet for more routine work such as setup, screens and tests. I did not use any other AI tool.
+Claude Code (Anthropic) with Claude Opus and Claude Sonnet. I did not use any other AI tool.
 
-## Which parts it helped with
-- **Planning.** Breaking the brief into pieces, the data model, and the locking strategy for double-booking and reminders (see `DECISIONS.md`).
-- **Code.** The API, the shared rules in `packages/domain`, the migrations, the reminder worker and the React screens. Claude wrote most first drafts.
-- **Tests.** Most of the test cases, including the race tests that fire requests behind a barrier against a real Postgres, and the daylight saving cases.
-- **Reviews.** I had Claude read the finished code for security and concurrency problems. That review found one of the deadlocks below.
-- **Docs.** First drafts of the README, `DECISIONS.md` and this file. I checked every claim in them against the code.
+## How I split the work
+I set the direction and made the calls; I used Claude to implement them, to debug, and to test.
 
-## How I worked
-I reviewed every change before it went into a commit. I read the diffs, ran lint, typecheck and the tests, and used the app in a browser as a member and as a professional in different timezones. For the rules that must never break (double-booking, the 24-hour rule, exactly-once reminders, access control), I wanted a test that fails when the rule is removed, so a passing test is not just a test that never looked. I can explain every line in the repository, and the examples below are the cases where the AI was wrong and I did not simply accept its output.
+**What I decided**
+- **Start from the traps, not the screens.** Before any code, I had every trap in the brief written down as a rule with a test to prove it: two people booking the same slot at once, one member overlapping across two professionals, the member's account timezone versus the browser's, clock changes, the exact 24-hour boundary, reminders exactly once across a restart, a logout that really logs out, and never showing who booked a slot.
+- **The data model and the locking strategy.** I designed these after reading the brief and discussing the options with Claude: database constraints versus application checks for double-booking, an outbox table versus a queue for reminders, and which row locks to take and in what order. The reasoning is in `DECISIONS.md` (D22–D31).
+- **The stack.** TypeScript on Node with npm workspaces (npm because it ships with Node, so a reviewer installs nothing extra) and PostgreSQL. An ORM for everyday queries, with plain SQL where correctness lives: the no-overlap constraints and the past-booking trigger. Drizzle came out ahead of plain `pg`, Kysely and Prisma for that split (D2).
+- **No queue service and no cache.** I ruled out Kafka/BullMQ and Redis: the reminders table is the queue, written in the same transaction as the booking, and a cache could show a slot that was just taken (D4).
+- **Email reminders, honestly scoped.** The brief excludes real email delivery, so I chose a local test inbox: emails are really sent, but only to Mailpit on the machine, with the at-least-once trade-off written down (D32, D33).
+- **The product feel.** A calm, modern interface for people seeking support: Tailwind, a week calendar instead of a long list of times, an accordion for working hours, soft motion that switches off for people who ask for reduced motion, and times always named in the viewer's own timezone.
+- **How the repository reads.** Small commits with plain messages, and nothing in the repository about tooling.
+
+**What Claude did, under that direction**
+- **Implementation.** Most of the code, from my requirements: the API, the shared rules in `packages/domain`, the migrations, the reminder worker and the screens.
+- **Testing.** Most of the tests, including the race tests that fire requests behind a barrier against a real Postgres, and the daylight saving cases. For every rule that must never break (double-booking, the 24-hour rule, exactly-once reminders, access control) I required a test that fails when the rule is removed, so a green test proves something.
+- **Debugging and review.** Reproducing failures (the deadlocks below), and a security and concurrency review pass over the finished code.
+- **Docs.** First drafts of the README, `DECISIONS.md` and this file, edited to match the code.
+
+## How I checked the work
+I reviewed every change: I read the diffs, ran lint, typecheck and the tests, and used the app in a browser as a member and as a professional in different timezones. I can explain every line in the repository.
+
+The examples below are the cases where the AI's output was wrong and was corrected rather than accepted.
 
 ## Where I corrected, rejected or improved AI output
 
