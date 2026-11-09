@@ -176,6 +176,8 @@ export const emailOutbox = pgTable(
     toEmail: text("to_email").notNull(),
     subject: text("subject").notNull(),
     body: text("body").notNull(),
+    // Null for rows queued before HTML emails existed; those go out as plain text only.
+    html: text("html"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     attempts: integer("attempts").notNull().default(0),

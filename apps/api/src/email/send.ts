@@ -4,7 +4,7 @@ import { emailOutbox, notifications, sessions } from "../db/schema.ts";
 
 // The one thing we need from nodemailer, so tests can pass a fake that records or fails.
 export type Mailer = {
-  sendMail(msg: { from: string; to: string; subject: string; text: string; messageId: string }): Promise<unknown>;
+  sendMail(msg: { from: string; to: string; subject: string; text: string; html?: string; messageId: string }): Promise<unknown>;
 };
 
 export const MAIL_FROM_DEFAULT = "ThoughtFull <reminders@thoughtfull.local>";
@@ -25,7 +25,7 @@ export async function sendDueEmails(db: Db, mailer: Mailer, now: Date, from = MA
   for (;;) {
     const claimed = await db.transaction(async (tx) => {
       const [row] = await tx
-        .select({ id: emailOutbox.id, to: emailOutbox.toEmail, subject: emailOutbox.subject, body: emailOutbox.body, attempts: emailOutbox.attempts })
+        .select({ id: emailOutbox.id, to: emailOutbox.toEmail, subject: emailOutbox.subject, body: emailOutbox.body, html: emailOutbox.html, attempts: emailOutbox.attempts })
         .from(emailOutbox)
         .innerJoin(notifications, eq(notifications.id, emailOutbox.notificationId))
         .innerJoin(sessions, eq(sessions.id, notifications.sessionId))
@@ -46,7 +46,7 @@ export async function sendDueEmails(db: Db, mailer: Mailer, now: Date, from = MA
       if (!row) return false;
 
       try {
-        await mailer.sendMail({ from, to: row.to, subject: row.subject, text: row.body, messageId: `<${row.id}@thoughtfull.local>` });
+        await mailer.sendMail({ from, to: row.to, subject: row.subject, text: row.body, html: row.html ?? undefined, messageId: `<${row.id}@thoughtfull.local>` });
         await tx.update(emailOutbox).set({ sentAt: now }).where(eq(emailOutbox.id, row.id));
         sent += 1;
       } catch (err) {

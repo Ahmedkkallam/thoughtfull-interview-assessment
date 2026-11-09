@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { createDb } from "../src/db/client.ts";
-import { reminderEmail } from "../src/email/content.ts";
+import { escapeHtml, reminderEmail } from "../src/email/content.ts";
 import { sendDueEmails, type Mailer } from "../src/email/send.ts";
 import { deliverDueReminders } from "../src/reminders/deliver.ts";
 import { createTestPool } from "./db.ts";
@@ -65,7 +65,7 @@ async function count(from: string): Promise<number> {
 
 async function outbox() {
   const { rows } = await pool.query(
-    `SELECT o.id, o.to_email, o.subject, o.body, o.sent_at, o.attempts, o.last_error, o.next_attempt_at, n.user_id
+    `SELECT o.id, o.to_email, o.subject, o.body, o.html, o.sent_at, o.attempts, o.last_error, o.next_attempt_at, n.user_id
        FROM email_outbox o JOIN notifications n ON n.id = o.notification_id ORDER BY o.to_email`,
   );
   return rows as {
@@ -73,6 +73,7 @@ async function outbox() {
     to_email: string;
     subject: string;
     body: string;
+    html: string | null;
     sent_at: Date | null;
     attempts: number;
     last_error: string | null;
@@ -116,26 +117,55 @@ afterAll(async () => {
 });
 
 describe("reminder email text", () => {
+  const end = (start: string) => new Date(new Date(start).getTime() + 50 * MINUTE);
   it("gives the start in the reader's zone on both sides of the London spring-forward", () => {
-    expect(reminderEmail("24h", new Date("2027-03-27T09:00:00Z"), "Europe/London").body).toContain(
+    expect(reminderEmail("24h", new Date("2027-03-27T09:00:00Z"), end("2027-03-27T09:00:00Z"), "Europe/London").body).toContain(
       "starts in about 24 hours: Saturday, 27 March 2027 at 09:00 GMT (Europe/London)",
     );
-    expect(reminderEmail("1h", new Date("2027-03-28T09:00:00Z"), "Europe/London").body).toContain(
+    expect(reminderEmail("1h", new Date("2027-03-28T09:00:00Z"), end("2027-03-28T09:00:00Z"), "Europe/London").body).toContain(
       "starts in about 1 hour: Sunday, 28 March 2027 at 10:00 BST (Europe/London)",
     );
   });
 
   it("tells apart the two 01:30s of the New York fall-back night", () => {
-    const first = reminderEmail("1h", new Date("2027-11-07T05:30:00Z"), "America/New_York").body;
-    const second = reminderEmail("1h", new Date("2027-11-07T06:30:00Z"), "America/New_York").body;
+    const first = reminderEmail("1h", new Date("2027-11-07T05:30:00Z"), end("2027-11-07T05:30:00Z"), "America/New_York").body;
+    const second = reminderEmail("1h", new Date("2027-11-07T06:30:00Z"), end("2027-11-07T06:30:00Z"), "America/New_York").body;
     expect(first).toContain("Sunday, 7 November 2027 at 01:30 GMT-4");
     expect(second).toContain("Sunday, 7 November 2027 at 01:30 GMT-5");
   });
 
   it("shows a London 09:00 session as 17:00 to a member in Singapore", () => {
-    const { subject, body } = reminderEmail("24h", new Date("2027-01-11T09:00:00Z"), "Asia/Singapore");
+    const { subject, body } = reminderEmail("24h", new Date("2027-01-11T09:00:00Z"), end("2027-01-11T09:00:00Z"), "Asia/Singapore");
     expect(subject).toBe("Reminder: you have a session soon");
     expect(body).toContain("Monday, 11 January 2027 at 17:00 GMT+8 (Asia/Singapore)");
+  });
+});
+
+describe("reminder email HTML", () => {
+  const start = new Date("2026-11-10T09:00:00Z");
+  const end = new Date("2026-11-10T09:50:00Z");
+
+  it("shows the date and time range in the reader's zone, with the button to the sessions page", () => {
+    const { html } = reminderEmail("24h", start, end, "Asia/Singapore", "https://app.example.test/");
+    expect(html).toContain("Tuesday 10 November 2026");
+    expect(html).toContain("17:00–17:50");
+    expect(html).toContain("(Asia/Singapore)");
+    expect(html).toContain('href="https://app.example.test/sessions"');
+    expect(html).toContain("Reminder · 24 hours before");
+    expect(reminderEmail("1h", start, end, "Asia/Singapore").html).toContain("Reminder · 1 hour before");
+  });
+
+  it("shows the London time after the spring-forward, with the summer-time zone name", () => {
+    const { html } = reminderEmail("1h", new Date("2027-03-28T09:00:00Z"), new Date("2027-03-28T09:50:00Z"), "Europe/London");
+    expect(html).toContain("10:00–10:50");
+    expect(html).toContain("BST");
+  });
+
+  it("escapes every interpolated value", () => {
+    const { html } = reminderEmail("24h", start, end, "Asia/Singapore", 'https://x.test/"><script>alert(1)</script>');
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("&#60;script&#62;");
+    expect(escapeHtml("<b>&\"'")).toBe("&#60;b&#62;&#38;&#34;&#39;");
   });
 });
 
@@ -217,11 +247,11 @@ describe("queueing reminder emails", () => {
     expect(await sendDueEmails(db, mailer, now)).toBe(2);
 
     const rows = await outbox();
-    const everything = [...rows.flatMap((o) => [o.subject, o.body]), ...mailer.sent.flatMap((m) => [m.subject, m.text])].join("\n");
+    const everything = [...rows.flatMap((o) => [o.subject, o.body, o.html]), ...mailer.sent.flatMap((m) => [m.subject, m.text, m.html])].join("\n");
     for (const name of ["Mira", "Okafor", "Leo", "Tanaka"]) expect(everything).not.toContain(name);
     const startsAt = new Date(s.startsAt);
-    expect(rows.find((o) => o.user_id === leo.id)!.body).toBe(reminderEmail("24h", startsAt, "Asia/Singapore").body);
-    expect(rows.find((o) => o.user_id === mira.id)!.body).toBe(reminderEmail("24h", startsAt, "Europe/London").body);
+    expect(rows.find((o) => o.user_id === leo.id)!.body).toBe(reminderEmail("24h", startsAt, plus(startsAt, 50 * MINUTE), "Asia/Singapore").body);
+    expect(rows.find((o) => o.user_id === mira.id)!.body).toBe(reminderEmail("24h", startsAt, plus(startsAt, 50 * MINUTE), "Europe/London").body);
   });
 });
 
@@ -239,6 +269,9 @@ describe("sending queued emails", () => {
       rows.map((o) => [o.to_email, `<${o.id}@thoughtfull.local>`, "Test <from@thoughtfull.local>"]).sort(),
     );
     expect(mailer.sent.map((m) => m.to).sort()).toEqual([leo.email, mira.email].sort());
+    // The stored HTML is what the mailer receives.
+    expect(mailer.sent.map((m) => m.html).sort()).toEqual(rows.map((o) => o.html).sort());
+    expect(mailer.sent.every((m) => m.html?.includes("Open ThoughtFull"))).toBe(true);
   });
 
   it("sends ten queued emails exactly once when two senders run at the same moment", async () => {

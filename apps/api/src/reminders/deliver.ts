@@ -27,6 +27,7 @@ export async function deliverDueReminders(
           recipientId: reminders.recipientId,
           kind: reminders.kind,
           startsAt: sessions.startsAt,
+          endsAt: sessions.endsAt,
           email: users.email,
           timezone: users.timezone,
           emailReminders: users.emailReminders,
@@ -70,8 +71,8 @@ export async function deliverDueReminders(
       const emails = inserted.flatMap(({ id, reminderId }) => {
         const r = byId.get(reminderId!)!;
         if (!r.emailReminders) return [];
-        const { subject, body } = reminderEmail(r.kind, r.startsAt, r.timezone);
-        return [{ notificationId: id, toEmail: r.email, subject, body, createdAt: now, nextAttemptAt: now }];
+        const { subject, body, html } = reminderEmail(r.kind, r.startsAt, r.endsAt, r.timezone);
+        return [{ notificationId: id, toEmail: r.email, subject, body, html, createdAt: now, nextAttemptAt: now }];
       });
       if (emails.length > 0) {
         await tx.insert(emailOutbox).values(emails).onConflictDoNothing({ target: emailOutbox.notificationId });
