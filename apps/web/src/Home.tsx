@@ -7,6 +7,7 @@ import { daySummary, weekdays, type Hours } from "./Availability.tsx";
 import { addDays, formatDay, formatRange, localDay, relativeTime, zoneLabel, zoneTitle } from "./format.ts";
 import { NotificationIcon, sentence, useNotifications } from "./Notifications.tsx";
 import { groupByDay, useSessions, type SessionItem } from "./Sessions.tsx";
+import { TimeOffSummary } from "./TimeOff.tsx";
 import {
   ArrowRightIcon,
   Avatar,
@@ -276,6 +277,7 @@ function ProfessionalHome({ me }: { me: Me }) {
               </dl>
             )}
           </Card>
+          <TimeOffSummary />
           <RecentNotifications me={me} />
         </div>
       </div>

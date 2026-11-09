@@ -1,9 +1,20 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { useOutletContext } from "react-router";
 import { api } from "./api.ts";
 import type { Me } from "./auth.ts";
-import { zoneOption } from "./format.ts";
-import { BellIcon, Callout, Card, ClockIcon, PageHeader, SwitchTrack, Zone } from "./ui.tsx";
+import { noticeLabel, zoneOption } from "./format.ts";
+import { BellIcon, Bone, Button, Callout, Card, CheckIcon, ClockIcon, inputClass, Loading, PageHeader, SwitchTrack, Zone } from "./ui.tsx";
+
+type BookingSettings = { minNoticeMinutes: number };
+
+// The only values the API accepts.
+const NOTICE_OPTIONS = [0, 60, 120, 240, 720, 1440, 2880];
+const noticeOption = (m: number) => (m === 0 ? "No minimum" : noticeLabel(m));
+
+export function useBookingSettings() {
+  return useQuery({ queryKey: ["booking-settings"], queryFn: () => api<BookingSettings>("/api/booking-settings") });
+}
 
 export function Settings() {
   const me = useOutletContext<Me>();
@@ -79,6 +90,8 @@ export function Settings() {
           </div>
         </Card>
 
+        {me.role === "professional" && <BookingNoticeCard />}
+
         <Card>
           <h2 className="flex items-center gap-2 text-lg font-semibold text-stone-900">
             <ClockIcon className="size-5 text-brand-700" />
@@ -91,5 +104,84 @@ export function Settings() {
         </Card>
       </div>
     </div>
+  );
+}
+
+function BookingNoticeCard() {
+  const saved = useBookingSettings();
+  return (
+    <Card>
+      <h2 id="booking-notice" className="flex items-center gap-2 text-lg font-semibold text-stone-900">
+        <ClockIcon className="size-5 text-brand-700" />
+        Booking notice
+      </h2>
+      <p className="mt-2 text-sm text-stone-700">Members can't book a session that starts sooner than this.</p>
+      {saved.isPending && (
+        <Loading className="mt-4">
+          <Bone className="h-11" />
+        </Loading>
+      )}
+      {saved.isError && (
+        <div className="mt-4">
+          <Callout>Could not load your booking notice: {saved.error.message}</Callout>
+        </div>
+      )}
+      {saved.data && <NoticeForm initial={saved.data.minNoticeMinutes} />}
+    </Card>
+  );
+}
+
+// Saved with a button rather than on change: arrowing through a select must not save every value on the way.
+function NoticeForm({ initial }: { initial: number }) {
+  const queryClient = useQueryClient();
+  const [value, setValue] = useState(initial);
+  const save = useMutation({
+    mutationFn: (minNoticeMinutes: number) =>
+      api<BookingSettings>("/api/booking-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ minNoticeMinutes }),
+      }),
+    onSuccess: (updated) => queryClient.setQueryData(["booking-settings"], updated),
+  });
+  return (
+    <form
+      className="mt-4 space-y-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        save.mutate(value);
+      }}
+    >
+      <label htmlFor="min-notice" className="block text-sm font-medium text-stone-700">
+        Minimum notice
+      </label>
+      <div className="flex flex-wrap items-center gap-3">
+        <select
+          id="min-notice"
+          value={value}
+          onChange={(e) => {
+            setValue(Number(e.target.value));
+            save.reset();
+          }}
+          className={`${inputClass} w-auto min-w-0 flex-1 sm:max-w-56`}
+        >
+          {NOTICE_OPTIONS.map((m) => (
+            <option key={m} value={m}>
+              {noticeOption(m)}
+            </option>
+          ))}
+        </select>
+        <Button type="submit" variant="secondary" disabled={save.isPending}>
+          {save.isPending ? "Saving…" : "Save"}
+        </Button>
+        {save.isSuccess && (
+          <p role="status" className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-700 motion-safe:animate-fade">
+            <CheckIcon className="size-4" />
+            Saved
+          </p>
+        )}
+      </div>
+      {save.isError && <Callout>Could not save the booking notice: {save.error.message}</Callout>}
+    </form>
   );
 }

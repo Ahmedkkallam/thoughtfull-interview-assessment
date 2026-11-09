@@ -1,9 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SESSION_MINUTES } from "@thoughtfull/domain";
 import { useState } from "react";
-import { useOutletContext } from "react-router";
+import { Link, useOutletContext } from "react-router";
 import { api } from "./api.ts";
 import type { Me } from "./auth.ts";
+import { noticeLabel } from "./format.ts";
+import { useBookingSettings } from "./Settings.tsx";
+import { TimeOffCard } from "./TimeOff.tsx";
 import { Bone, Button, Callout, Card, CheckIcon, ChevronDownIcon, CopyIcon, CrossIcon, Loading, PageHeader, PlusIcon, SwitchTrack, Zone } from "./ui.tsx";
 
 type Range = { start: string; end: string };
@@ -50,43 +53,59 @@ export function Availability() {
 
 function Editor({ timezone }: { timezone: string }) {
   const saved = useQuery({ queryKey: ["availability"], queryFn: () => api<Hours[]>("/api/availability") });
-  const header = (
-    <PageHeader
-      title="My working hours"
-      subtitle={
-        <>
-          Members book sessions inside these hours. <Zone prefix="Hours are in " zone={timezone} long />
-        </>
-      }
-    />
-  );
-  if (saved.isPending)
-    return (
-      <>
-        {header}
-        <Loading className="mx-auto max-w-3xl divide-y divide-stone-100 rounded-card border border-stone-200/80 bg-white">
-          {weekdays.map((d) => (
-            <div key={d} className="flex items-center gap-4 p-5">
-              <Bone className="h-6 w-11 rounded-full" />
-              <Bone className="h-4 w-24" />
-              <Bone className="h-4 flex-1" />
-            </div>
-          ))}
-        </Loading>
-      </>
-    );
-  if (saved.isError)
-    return (
-      <>
-        {header}
-        <Callout>Could not load your hours: {saved.error.message}</Callout>
-      </>
-    );
   return (
     <>
-      {header}
-      <WeekForm initial={saved.data} />
+      <PageHeader
+        title="My working hours"
+        subtitle={
+          <>
+            Members book sessions inside these hours. <Zone prefix="Hours are in " zone={timezone} long />
+          </>
+        }
+      />
+      <div className="mx-auto max-w-3xl space-y-6">
+        <NoticeRow />
+        {saved.isPending ? (
+          <Loading className="divide-y divide-stone-100 rounded-card border border-stone-200/80 bg-white">
+            {weekdays.map((d) => (
+              <div key={d} className="flex items-center gap-4 p-5">
+                <Bone className="h-6 w-11 rounded-full" />
+                <Bone className="h-4 w-24" />
+                <Bone className="h-4 flex-1" />
+              </div>
+            ))}
+          </Loading>
+        ) : saved.isError ? (
+          <Callout>Could not load your hours: {saved.error.message}</Callout>
+        ) : (
+          <WeekForm initial={saved.data} />
+        )}
+        <TimeOffCard timezone={timezone} />
+      </div>
     </>
+  );
+}
+
+// The booking notice lives in Settings; this row says what it is and links there.
+function NoticeRow() {
+  const notice = useBookingSettings();
+  const minutes = notice.data?.minNoticeMinutes;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 rounded-card border border-stone-200/80 bg-white px-4 py-1 text-sm shadow-sm sm:px-5">
+      <p className="min-w-0 flex-1 py-2 text-stone-700">
+        Booking notice:{" "}
+        {notice.isPending ? (
+          <span className="text-stone-400">loading…</span>
+        ) : notice.isError ? (
+          <span className="text-rose-700">could not load</span>
+        ) : (
+          <span className="font-medium text-stone-900">{minutes ? `at least ${noticeLabel(minutes)} ahead` : "no minimum"}</span>
+        )}
+      </p>
+      <Link to="/settings" className="inline-flex min-h-11 items-center rounded-xl font-medium text-brand-700 hover:text-brand-800">
+        Change{" "}<span className="sr-only">booking notice</span>
+      </Link>
+    </div>
   );
 }
 
@@ -133,7 +152,7 @@ function WeekForm({ initial }: { initial: Hours[] }) {
 
   return (
     <form
-      className="mx-auto max-w-3xl space-y-4"
+      className="space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
         setDone(false);

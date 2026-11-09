@@ -6,7 +6,7 @@ import { api } from "./api.ts";
 import { postJson, type Me } from "./auth.ts";
 import { BookingSummary } from "./BookingSummary.tsx";
 import { shownDayOf, SlotCalendar } from "./Calendar.tsx";
-import { formatDay, formatRange, formatTime, zoneLabel, zoneTitle } from "./format.ts";
+import { formatDay, formatRange, formatTime, noticeLabel, zoneLabel, zoneTitle } from "./format.ts";
 import { useSessions } from "./Sessions.tsx";
 import {
   ArrowLeftIcon,
@@ -28,7 +28,8 @@ import {
   Zone,
 } from "./ui.tsx";
 
-type Professional = { id: string; name: string; timezone: string };
+// minNoticeMinutes comes with a single professional (not the list); the slots already respect it.
+type Professional = { id: string; name: string; timezone: string; minNoticeMinutes?: number };
 type Booked = { id: string; startsAt: string; endsAt: string; status: string; professional: Professional };
 
 const SESSION_MINUTES = 50;
@@ -174,6 +175,9 @@ function Profile({ timezone }: { timezone: string }) {
               <p className="text-sm text-stone-600">
                 <Zone prefix="Times shown in " zone={timezone} long />
               </p>
+              {!!pro.data.minNoticeMinutes && (
+                <p className="text-sm text-stone-500">Books at least {noticeLabel(pro.data.minNoticeMinutes)} ahead</p>
+              )}
             </div>
           </Card>
           {target.old && (

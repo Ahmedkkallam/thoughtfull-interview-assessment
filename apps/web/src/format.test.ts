@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { addDays, dayParts, formatDay, formatRange, formatTime, localDay, relativeTime, weekStart, zoneLabel, zoneLongName, zoneOption } from "./format.ts";
+import { addDays, dayParts, formatDay, formatRange, formatTime, localDay, noticeLabel, relativeTime, weekStart, zoneLabel, zoneLongName, zoneOption } from "./format.ts";
 
 test("half-hour zone (Asia/Kolkata) shows :30 and rolls into the next day", () => {
   const start = new Date("2027-01-04T20:00:00Z");
@@ -41,7 +41,14 @@ test("calendar days step across month, year and the clock change without driftin
   expect(addDays("2027-03-27", 2)).toBe("2027-03-29"); // London clocks go forward on 28 March
   expect(weekStart("2027-01-05")).toBe("2027-01-04"); // Tuesday -> Monday
   expect(weekStart("2027-01-10")).toBe("2027-01-04"); // Sunday -> the Monday before
-  expect(dayParts("2027-01-05")).toEqual({ weekday: "Tue", day: "5", month: "Jan", long: "Tuesday 5 January 2027" });
+  expect(dayParts("2027-01-05")).toEqual({ weekday: "Tue", day: "5", month: "Jan", long: "Tuesday 5 January 2027", dayMonth: "5 January" });
+});
+
+test("booking notice reads in hours, minutes only when not whole hours", () => {
+  expect(noticeLabel(60)).toBe("1 hour");
+  expect(noticeLabel(120)).toBe("2 hours");
+  expect(noticeLabel(2880)).toBe("48 hours");
+  expect(noticeLabel(30)).toBe("30 minutes");
 });
 
 test("the local day follows the viewer's zone, not UTC", () => {

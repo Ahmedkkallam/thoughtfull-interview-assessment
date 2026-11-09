@@ -64,11 +64,24 @@ export function weekStart(day: string): string {
   return addDays(day, -((toUtc(day).getUTCDay() + 6) % 7));
 }
 
-// { weekday: "Tue", day: "5", month: "Jan", long: "Tuesday 5 January 2027" }
+// { weekday: "Tue", day: "5", month: "Jan", long: "Tuesday 5 January 2027", dayMonth: "5 January" }
 export function dayParts(day: string) {
   const short = parts(toUtc(day), "UTC", { weekday: "short", day: "numeric", month: "short" });
   const long = parts(toUtc(day), "UTC", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-  return { weekday: short.weekday!, day: short.day!, month: short.month!, long: `${long.weekday} ${long.day} ${long.month} ${long.year}` };
+  return {
+    weekday: short.weekday!,
+    day: short.day!,
+    month: short.month!,
+    long: `${long.weekday} ${long.day} ${long.month} ${long.year}`,
+    dayMonth: `${long.day} ${long.month}`,
+  };
+}
+
+// A booking-notice length: 60 -> "1 hour", 120 -> "2 hours", 30 -> "30 minutes".
+export function noticeLabel(minutes: number): string {
+  if (minutes % 60 !== 0) return `${minutes} minutes`;
+  const h = minutes / 60;
+  return `${h} ${h === 1 ? "hour" : "hours"}`;
 }
 
 // The calendar day ("2027-01-05") an instant falls on in a zone: used to group sessions and notifications by day.

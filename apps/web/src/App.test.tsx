@@ -121,9 +121,11 @@ test("a signed-in user visiting the login page is sent home", async () => {
 
 const pro = { ...user, role: "professional", name: "Dr. Mira" };
 const monday = { weekday: 1, start: "09:00", end: "12:00" };
+// My hours also loads the time off list and the booking notice.
+const proExtras = { "GET /api/blocked-dates": () => json([]), "GET /api/booking-settings": () => json({ minNoticeMinutes: 0 }) };
 
 test("the editor shows the saved ranges for each day in the professional's timezone", async () => {
-  mockApi({ "GET /api/me": () => json(pro), "GET /api/availability": () => json([monday, { weekday: 1, start: "13:00", end: "17:00" }]) });
+  mockApi({ ...proExtras, "GET /api/me": () => json(pro), "GET /api/availability": () => json([monday, { weekday: 1, start: "13:00", end: "17:00" }]) });
   renderAt("/availability");
   expect(((await screen.findByLabelText("Monday range 1 start")) as HTMLInputElement).value).toBe("09:00");
   expect((screen.getByLabelText("Monday range 2 end") as HTMLInputElement).value).toBe("17:00");
@@ -133,6 +135,7 @@ test("the editor shows the saved ranges for each day in the professional's timez
 
 test("adding a range and saving sends the whole week", async () => {
   const fetchMock = mockApi({
+    ...proExtras,
     "GET /api/me": () => json(pro),
     "GET /api/availability": () => json([monday]),
     "PUT /api/availability": () => json([]),
@@ -151,6 +154,7 @@ test("adding a range and saving sends the whole week", async () => {
 
 test("removing a range leaves it out of the saved week", async () => {
   const fetchMock = mockApi({
+    ...proExtras,
     "GET /api/me": () => json(pro),
     "GET /api/availability": () => json([monday, { weekday: 3, start: "10:00", end: "11:00" }]),
     "PUT /api/availability": () => json([]),
@@ -167,6 +171,7 @@ test("removing a range leaves it out of the saved week", async () => {
 test("overlapping hours show the server's message", async () => {
   const message = "weekday 1: 09:00-12:00 overlaps 11:00-13:00";
   mockApi({
+    ...proExtras,
     "GET /api/me": () => json(pro),
     "GET /api/availability": () => json([monday]),
     "PUT /api/availability": () => json({ error: { code: "INVALID_HOURS", message } }, 400),
@@ -567,6 +572,7 @@ test("the sessions tabs switch between upcoming and past", async () => {
 
 test("switching a day off leaves its hours out of the saved week", async () => {
   const fetchMock = mockApi({
+    ...proExtras,
     "GET /api/me": () => json(pro),
     "GET /api/availability": () => json([monday, { weekday: 3, start: "10:00", end: "11:00" }]),
     "PUT /api/availability": () => json([]),
@@ -625,4 +631,153 @@ test("a refused email-reminders change puts the switch back and shows the server
   fireEvent.click(toggle);
   expect((await screen.findByRole("alert")).textContent).toContain("Something went wrong on our side");
   expect(screen.getByRole("switch", { name: "Email me reminders too" }).getAttribute("aria-checked")).toBe("true");
+});
+
+// ---- time off and booking notice ----
+const christmas = { day: "2026-12-24", reason: "Family", bookedSessions: 0 };
+
+test("adding a day off posts the day and the note, then lists it", async () => {
+  let list: object[] = [];
+  const fetchMock = mockApi({
+    ...proExtras,
+    "GET /api/me": () => json(pro),
+    "GET /api/availability": () => json([monday]),
+    "GET /api/blocked-dates": () => json(list),
+    "POST /api/blocked-dates": () => {
+      list = [christmas];
+      return json(christmas, 201);
+    },
+  });
+  renderAt("/availability");
+  expect(await screen.findByText("No time off planned.")).toBeTruthy();
+  type("Day off", "2026-12-24");
+  type("Note (only you see this)", "Family");
+  fireEvent.click(screen.getByRole("button", { name: "Add day off" }));
+  expect(await screen.findByText("Thursday 24 December 2026")).toBeTruthy();
+  expect(screen.getByText("Family")).toBeTruthy();
+  const call = fetchMock.mock.calls.find(([p, i]) => p === "/api/blocked-dates" && i?.method === "POST")!;
+  expect(JSON.parse(call[1]!.body as string)).toEqual({ day: "2026-12-24", reason: "Family" });
+  expect((screen.getByLabelText("Day off") as HTMLInputElement).value).toBe("");
+});
+
+test("a day that is already blocked shows the server's message", async () => {
+  const message = "That day is already blocked.";
+  mockApi({
+    ...proExtras,
+    "GET /api/me": () => json(pro),
+    "GET /api/availability": () => json([monday]),
+    "POST /api/blocked-dates": () => json({ error: { code: "ALREADY_BLOCKED", message } }, 409),
+  });
+  renderAt("/availability");
+  await screen.findByText("No time off planned.");
+  type("Day off", "2026-12-24");
+  fireEvent.click(screen.getByRole("button", { name: "Add day off" }));
+  expect((await screen.findByRole("alert")).textContent).toBe(message);
+});
+
+test("a day off with sessions still booked warns that blocking does not cancel them", async () => {
+  mockApi({
+    ...proExtras,
+    "GET /api/me": () => json(pro),
+    "GET /api/availability": () => json([monday]),
+    "GET /api/blocked-dates": () => json([{ ...christmas, bookedSessions: 2 }, { day: "2026-12-25", reason: null, bookedSessions: 0 }]),
+  });
+  renderAt("/availability");
+  const warning = await screen.findByRole("link", { name: "2 sessions still booked: blocking does not cancel them" });
+  expect(warning.getAttribute("href")).toBe("/sessions");
+  expect(screen.getAllByText(/still booked/)).toHaveLength(1);
+});
+
+test("removing a day off sends DELETE for that day", async () => {
+  const fetchMock = mockApi({
+    ...proExtras,
+    "GET /api/me": () => json(pro),
+    "GET /api/availability": () => json([monday]),
+    "GET /api/blocked-dates": () => json([christmas]),
+    "DELETE /api/blocked-dates/2026-12-24": () => new Response(null, { status: 204 }),
+  });
+  renderAt("/availability");
+  fireEvent.click(await screen.findByRole("button", { name: "Remove time off on 24 December" }));
+  await waitFor(() =>
+    expect(fetchMock.mock.calls.some(([p, i]) => p === "/api/blocked-dates/2026-12-24" && i?.method === "DELETE")).toBe(true),
+  );
+});
+
+test("the professional dashboard lists the next days off with a link to manage them", async () => {
+  mockApi({
+    "GET /api/me": () => json(pro),
+    "GET /api/notifications": noNotes,
+    "GET /api/sessions?scope=upcoming": () => json([]),
+    "GET /api/availability": () => json([monday]),
+    "GET /api/blocked-dates": () =>
+      json([
+        { ...christmas, bookedSessions: 1 },
+        { day: "2026-12-25", reason: null, bookedSessions: 0 },
+        { day: "2026-12-26", reason: null, bookedSessions: 0 },
+        { day: "2026-12-31", reason: null, bookedSessions: 0 },
+      ]),
+  });
+  renderAt("/");
+  expect(await screen.findByText("Thursday 24 December 2026")).toBeTruthy();
+  expect(screen.getByText("Saturday 26 December 2026")).toBeTruthy();
+  expect(screen.queryByText("Thursday 31 December 2026")).toBeNull(); // only the next three
+  expect(screen.getByRole("link", { name: "1 session still booked: blocking does not cancel it" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Manage time off" }).getAttribute("href")).toBe("/availability");
+});
+
+test("changing the booking notice saves the chosen minutes", async () => {
+  const fetchMock = mockApi({
+    "GET /api/me": () => json(pro),
+    "GET /api/booking-settings": () => json({ minNoticeMinutes: 0 }),
+    "PUT /api/booking-settings": () => json({ minNoticeMinutes: 240 }),
+  });
+  renderAt("/settings");
+  const select = (await screen.findByLabelText("Minimum notice")) as HTMLSelectElement;
+  expect(select.value).toBe("0");
+  fireEvent.change(select, { target: { value: "240" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect(await screen.findByText("Saved")).toBeTruthy();
+  const call = fetchMock.mock.calls.find(([, i]) => i?.method === "PUT")!;
+  expect(call[0]).toBe("/api/booking-settings");
+  expect(JSON.parse(call[1]!.body as string)).toEqual({ minNoticeMinutes: 240 });
+});
+
+test("members do not see the booking notice setting", async () => {
+  mockApi({ "GET /api/me": () => json(user) });
+  renderAt("/settings");
+  await screen.findByRole("switch", { name: "Email me reminders too" });
+  expect(screen.queryByLabelText("Minimum notice")).toBeNull();
+});
+
+test("a member sees how far ahead the professional must be booked", async () => {
+  mockApi({
+    "GET /api/me": () => json(member),
+    "GET /api/professionals/p1": () => json({ ...london, minNoticeMinutes: 120 }),
+    "GET /api/professionals/p1/slots": weekSlots,
+  });
+  renderAt("/professionals/p1");
+  expect(await screen.findByText("Books at least 2 hours ahead")).toBeTruthy();
+});
+
+test("with no minimum notice the member page says nothing about it", async () => {
+  mockApi({
+    "GET /api/me": () => json(member),
+    "GET /api/professionals/p1": () => json({ ...london, minNoticeMinutes: 0 }),
+    "GET /api/professionals/p1/slots": weekSlots,
+  });
+  renderAt("/professionals/p1");
+  await screen.findByRole("heading", { name: "Tuesday 5 January 2027" });
+  expect(screen.queryByText(/Books at least/)).toBeNull();
+});
+
+test("a booking inside the notice window shows the server's message", async () => {
+  const message = "This professional needs at least 2 hours notice.";
+  mockApi({
+    "GET /api/me": () => json(member),
+    "GET /api/professionals/p1": () => json(london),
+    "POST /api/sessions": () => json({ error: { code: "TOO_SOON", message } }, 422),
+  });
+  renderAt(confirmPath);
+  fireEvent.click(await screen.findByRole("button", { name: "Book session" }));
+  expect((await screen.findByRole("alert")).textContent).toContain(message);
 });
