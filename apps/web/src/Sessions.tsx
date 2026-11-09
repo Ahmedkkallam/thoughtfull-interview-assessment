@@ -4,6 +4,7 @@ import { Link, useOutletContext } from "react-router";
 import { api } from "./api.ts";
 import { postJson, type Me } from "./auth.ts";
 import { formatDay, formatRange } from "./format.ts";
+import { Badge, Button, buttonClass, Callout, Card, PageHeader, Skeleton } from "./ui.tsx";
 
 export type SessionItem = {
   id: string;
@@ -31,10 +32,11 @@ export function Sessions() {
   const me = useOutletContext<Me>();
   return (
     <>
-      <h1>{me.role === "member" ? "My sessions" : "My schedule"}</h1>
-      <p>Times shown in {me.timezone}</p>
-      <Section scope="upcoming" title="Upcoming" me={me} />
-      <Section scope="past" title="Past" me={me} />
+      <PageHeader title={me.role === "member" ? "My sessions" : "My schedule"} subtitle={`Times shown in ${me.timezone}`} />
+      <div className="space-y-10">
+        <Section scope="upcoming" title="Upcoming" me={me} />
+        <Section scope="past" title="Past" me={me} />
+      </div>
     </>
   );
 }
@@ -42,12 +44,14 @@ export function Sessions() {
 function Section({ scope, title, me }: { scope: "upcoming" | "past"; title: string; me: Me }) {
   const sessions = useSessions(scope);
   return (
-    <section aria-labelledby={`sessions-${scope}`}>
-      <h2 id={`sessions-${scope}`}>{title}</h2>
-      {sessions.isPending && <p role="status">Loading…</p>}
-      {sessions.isError && <p role="alert">Could not load sessions: {sessions.error.message}</p>}
-      {sessions.data?.length === 0 && <p>No {scope} sessions.</p>}
-      <ul className="plain">
+    <section aria-labelledby={`sessions-${scope}`} className="space-y-3">
+      <h2 id={`sessions-${scope}`} className="text-lg font-semibold text-stone-900">
+        {title}
+      </h2>
+      {sessions.isPending && <Skeleton rows={2} />}
+      {sessions.isError && <Callout>Could not load sessions: {sessions.error.message}</Callout>}
+      {sessions.data?.length === 0 && <Card className="text-sm text-stone-600">No {scope} sessions.</Card>}
+      <ul className="space-y-3">
         {sessions.data?.map((s) => (
           <Row key={s.id} s={s} me={me} actions={scope === "upcoming"} />
         ))}
@@ -74,49 +78,81 @@ function Row({ s, me, actions }: { s: SessionItem; me: Me; actions: boolean }) {
   const end = new Date(s.endsAt);
   const active = actions && s.status === "booked";
   const tooLate = me.role === "member" && start.getTime() - openedAt < DAY_MS;
+  const day = formatDay(start, me.timezone);
+  // "Thu 12 Nov 2026" -> the calendar-style block on the left; the full date is still written out for everyone.
+  const [weekday, dayOfMonth, month] = day.split(" ");
+  const cancelled = s.status === "cancelled";
 
   return (
-    <li className="session">
-      <strong>{formatDay(start, me.timezone)}</strong>, {formatRange(start, end, me.timezone)} with {s.counterpart.name}
-      {s.status === "cancelled" && <span className="badge"> {cancelledLabel(s.cancelReason, me.role)}</span>}
-      {cancel.isSuccess && <p role="status">Session cancelled.</p>}
+    <li
+      className={`rounded-card border bg-white p-4 shadow-sm transition-shadow duration-200 hover:shadow-md sm:p-5 ${cancelled ? "border-stone-200 bg-stone-50/60" : "border-stone-200/80"}`}
+    >
+      <div className="flex items-start gap-4">
+        <div
+          aria-hidden="true"
+          className={`flex w-14 shrink-0 flex-col items-center rounded-xl py-2 leading-tight ${cancelled ? "bg-stone-100 text-stone-500" : "bg-brand-50 text-brand-800"}`}
+        >
+          <span className="text-xs font-medium uppercase">{weekday}</span>
+          <span className="text-xl font-semibold">{dayOfMonth}</span>
+          <span className="text-xs">{month}</span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className={`font-medium ${cancelled ? "text-stone-500" : "text-stone-900"}`}>{day}</p>
+            {cancelled ? (
+              <Badge tone={s.cancelReason === "rescheduled" ? "muted" : "rose"}>{cancelledLabel(s.cancelReason, me.role)}</Badge>
+            ) : (
+              <Badge tone="brand">Booked</Badge>
+            )}
+          </div>
+          <p className={`mt-0.5 tabular-nums ${cancelled ? "text-stone-500 line-through decoration-stone-300" : "text-stone-700"}`}>
+            {formatRange(start, end, me.timezone)} with {s.counterpart.name}
+          </p>
+        </div>
+      </div>
+
+      {cancel.isSuccess && (
+        <p role="status" className="mt-3 text-sm font-medium text-brand-700 motion-safe:animate-fade">
+          Session cancelled.
+        </p>
+      )}
       {active && !cancel.isSuccess && (
-        <div className="actions">
+        <div className="mt-4 border-t border-stone-100 pt-3">
           {confirming ? (
-            <>
-              <span>Cancel this session?</span>
-              <button type="button" onClick={() => cancel.mutate()} disabled={cancel.isPending}>
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 motion-safe:animate-fade">
+              <span className="mr-auto text-sm font-medium text-amber-900">Cancel this session?</span>
+              <Button variant="danger" size="sm" onClick={() => cancel.mutate()} disabled={cancel.isPending}>
                 Yes
-              </button>
-              <button type="button" onClick={() => setConfirming(false)}>
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setConfirming(false)}>
                 No
-              </button>
-            </>
+              </Button>
+            </div>
           ) : (
-            <>
-              <button type="button" onClick={() => setConfirming(true)} disabled={tooLate}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setConfirming(true)} disabled={tooLate}>
                 Cancel
-              </button>
+              </Button>
               {me.role === "member" &&
                 s.counterpart.id &&
                 (tooLate ? (
-                  <button type="button" disabled>
+                  <Button variant="secondary" size="sm" disabled>
                     Reschedule
-                  </button>
+                  </Button>
                 ) : (
-                  <Link className="button-link" to={`/professionals/${s.counterpart.id}?reschedule=${s.id}`}>
+                  <Link className={buttonClass("secondary", "sm")} to={`/professionals/${s.counterpart.id}?reschedule=${s.id}`}>
                     Reschedule
                   </Link>
                 ))}
-              {tooLate && <span>Changes are possible up to 24 hours before the start.</span>}
-            </>
+              {tooLate && <span className="text-xs text-stone-500">Changes are possible up to 24 hours before the start.</span>}
+            </div>
           )}
         </div>
       )}
       {cancel.isError && (
-        <p role="alert" className="error">
-          {cancel.error.message}
-        </p>
+        <div className="mt-3">
+          <Callout>{cancel.error.message}</Callout>
+        </div>
       )}
     </li>
   );

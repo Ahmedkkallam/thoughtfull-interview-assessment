@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router";
 import { postJson, type Me } from "./auth.ts";
+import { Button, Callout, Field, inputClass } from "./ui.tsx";
 
 export function Login() {
   const [email, setEmail] = useState("");
@@ -22,15 +23,27 @@ export function Login() {
   }
 
   return (
-    <form onSubmit={submit}>
-      <h2>Log in</h2>
-      <label htmlFor="email">Email</label>
-      <input id="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-      <label htmlFor="password">Password</label>
-      <input id="password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
-      {login.isError && <p role="alert" className="error">{login.error.message}</p>}
-      <button type="submit" disabled={login.isPending}>{login.isPending ? "Logging in…" : "Log in"}</button>
-      <p>New here? <Link to="/signup">Create an account</Link></p>
+    <form onSubmit={submit} className="space-y-5">
+      <div>
+        <h2 className="text-xl font-semibold text-stone-900">Log in</h2>
+        <p className="mt-1 text-sm text-stone-600">Welcome back. It's good to see you.</p>
+      </div>
+      <Field id="email" label="Email">
+        <input id="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} />
+      </Field>
+      <Field id="password" label="Password">
+        <input id="password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} />
+      </Field>
+      {login.isError && <Callout>{login.error.message}</Callout>}
+      <Button type="submit" disabled={login.isPending} className="w-full">
+        {login.isPending ? "Logging in…" : "Log in"}
+      </Button>
+      <p className="text-center text-sm text-stone-600">
+        New here?{" "}
+        <Link to="/signup" className="font-medium text-brand-700 underline-offset-4 hover:underline">
+          Create an account
+        </Link>
+      </p>
     </form>
   );
 }
