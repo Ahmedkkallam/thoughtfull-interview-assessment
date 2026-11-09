@@ -47,12 +47,12 @@ describe("professionals", () => {
     for (const p of res.json()) expect(Object.keys(p).sort()).toEqual(["id", "name", "timezone"]);
   });
 
-  it("shows one professional's profile without an email", async () => {
+  it("shows one professional's profile and booking notice without an email", async () => {
     const m = await signup(mira);
     const member = await signup(leo);
     const res = await get(member.token, `/api/professionals/${m.id}`);
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ id: m.id, name: mira.name, timezone: "Europe/London" });
+    expect(res.json()).toEqual({ id: m.id, name: mira.name, timezone: "Europe/London", minNoticeMinutes: 0 });
   });
 
   it.each([

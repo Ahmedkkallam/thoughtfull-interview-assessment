@@ -12,11 +12,12 @@ import { listFreeSlots } from "./slots.ts";
 const publicColumns = { id: users.id, name: users.name, timezone: users.timezone };
 
 // A malformed id is just "not found", so Postgres never sees it and cannot throw.
+// The notice is public: a member needs it to understand why near slots are missing.
 export async function findProfessional(db: Db, rawId: string) {
   const id = z.uuid().safeParse(rawId);
   if (!id.success) throw new HttpError(404, "NOT_FOUND", "Professional not found");
   const [pro] = await db
-    .select(publicColumns)
+    .select({ ...publicColumns, minNoticeMinutes: users.minNoticeMinutes })
     .from(users)
     .where(and(eq(users.id, id.data), eq(users.role, "professional")));
   if (!pro) throw new HttpError(404, "NOT_FOUND", "Professional not found");

@@ -1,11 +1,12 @@
 import { fileURLToPath } from "node:url";
-import type { WorkingHours } from "@thoughtfull/domain";
-import { sql } from "drizzle-orm";
+import { localDay, type WorkingHours } from "@thoughtfull/domain";
+import { eq, sql } from "drizzle-orm";
 import pg from "pg";
 import { hashPassword } from "./auth/password.ts";
 import { replaceWorkingHours } from "./availability/routes.ts";
 import { createDb, type Db } from "./db/client.ts";
-import { users } from "./db/schema.ts";
+import { blockedDates, users } from "./db/schema.ts";
+import { upcomingBlockedDays } from "./time-off/routes.ts";
 
 const range = (days: number[], start: string, end: string): WorkingHours[] =>
   days.map((weekday) => ({ weekday, start, end }));
@@ -38,16 +39,31 @@ const people = [
   { role: "member" as const, name: "Sam Carter", email: "sam.carter@example.test", timezone: "Europe/London", hours: [] },
 ];
 
-export async function seed(db: Db, password: string): Promise<void> {
+const DAY_MS = 24 * 3600_000;
+
+export async function seed(db: Db, password: string, now = new Date()): Promise<void> {
   const passwordHash = await hashPassword(password);
   for (const p of people) {
     const [existing] = await db.select({ id: users.id }).from(users).where(sql`lower(${users.email}) = ${p.email}`);
     if (existing) continue; // idempotent: running twice changes nothing
     const [row] = await db
       .insert(users)
-      .values({ role: p.role, name: p.name, email: p.email, passwordHash, timezone: p.timezone })
+      // Demo professionals ask for 2 hours' notice (the brief's example); they can change it in Settings.
+      .values({ role: p.role, name: p.name, email: p.email, passwordHash, timezone: p.timezone, minNoticeMinutes: p.role === "professional" ? 120 : 0 })
       .returning({ id: users.id });
     if (p.hours.length > 0) await replaceWorkingHours(db, row!.id, p.hours);
+  }
+
+  // Dr. Mira Okafor takes a training day about three weeks ahead, unless she already has time off coming up.
+  const [mira] = await db.select({ id: users.id }).from(users).where(eq(users.email, "mira.okafor@example.test"));
+  const zone = "Europe/London";
+  if ((await upcomingBlockedDays(db, mira!.id, localDay(now, zone))).length === 0) {
+    // Calendar-date arithmetic on a UTC date: no clock changes in UTC, so +24 h is always the next date.
+    let date = new Date(`${localDay(new Date(now.getTime() + 21 * DAY_MS), zone)}T00:00:00Z`);
+    // A weekday, so the gap shows in her Monday-to-Friday hours.
+    while (date.getUTCDay() === 0 || date.getUTCDay() === 6) date = new Date(date.getTime() + DAY_MS);
+    const day = date.toISOString().slice(0, 10);
+    await db.insert(blockedDates).values({ professionalId: mira!.id, day, reason: "Training day" });
   }
 }
 

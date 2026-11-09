@@ -3,9 +3,11 @@ import {
   boolean,
   check,
   customType,
+  date,
   index,
   integer,
   pgTable,
+  primaryKey,
   smallint,
   text,
   time,
@@ -33,12 +35,15 @@ export const users = pgTable(
     timezone: text("timezone").notNull(),
     // On by default: reminders are emailed as well as shown in the app; the user can turn it off.
     emailReminders: boolean("email_reminders").notNull().default(true),
+    // Professionals only: how far ahead a session must be booked. 0 = up to the start of a slot.
+    minNoticeMinutes: integer("min_notice_minutes").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     // On lower(email) so "Ana@x.io" and "ana@x.io" are the same account.
     uniqueIndex("users_email_key").on(sql`lower(${t.email})`),
     check("users_role_check", sql`${t.role} in ('member', 'professional')`),
+    check("users_min_notice_minutes_check", sql`${t.minNoticeMinutes} in (0, 60, 120, 240, 720, 1440, 2880)`),
   ],
 );
 
@@ -69,6 +74,26 @@ export const workingHours = pgTable(
     check("working_hours_weekday_check", sql`${t.weekday} between 1 and 7`),
     check("working_hours_end_after_start", sql`${t.endTime} > ${t.startTime}`),
     unique("working_hours_professional_weekday_start_key").on(t.professionalId, t.weekday, t.startTime),
+  ],
+);
+
+// Time off: whole local days (in the professional's zone) with no slots. Existing sessions are kept.
+export const blockedDates = pgTable(
+  "blocked_dates",
+  {
+    professionalId: uuid("professional_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // A local calendar date, not an instant: "the 11th in London" whatever the viewer's zone.
+    day: date("day", { mode: "string" }).notNull(),
+    // Private to the professional; members never see it.
+    reason: text("reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // One row per day: blocking the same day twice is a 409.
+    primaryKey({ name: "blocked_dates_pkey", columns: [t.professionalId, t.day] }),
+    check("blocked_dates_reason_length", sql`char_length(${t.reason}) <= 80`),
   ],
 );
 

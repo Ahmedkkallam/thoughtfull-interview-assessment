@@ -5,6 +5,7 @@ import { sql } from "drizzle-orm";
 import type { Pool } from "pg";
 import { availabilityRoutes } from "./availability/routes.ts";
 import { authRoutes } from "./auth/routes.ts";
+import { bookingSettingsRoutes } from "./booking-settings/routes.ts";
 import { SESSION_COOKIE, findSessionUser } from "./auth/sessions.ts";
 import type { Clock } from "./clock.ts";
 import { createDb } from "./db/client.ts";
@@ -12,6 +13,7 @@ import { HttpError, errorHandler } from "./errors.ts";
 import { notificationRoutes } from "./notifications/routes.ts";
 import { professionalRoutes } from "./professionals/routes.ts";
 import { sessionRoutes } from "./sessions/routes.ts";
+import { timeOffRoutes } from "./time-off/routes.ts";
 
 export type AppDeps = { pool: Pool; clock: Clock };
 
@@ -56,6 +58,8 @@ export function buildApp({ pool, clock }: AppDeps) {
   // Registered as a plugin so it loads after rateLimit (plain app.post calls run before queued plugins load).
   app.register(async (scope) => authRoutes(scope, { db, clock }));
   availabilityRoutes(app, { db });
+  timeOffRoutes(app, { db, clock });
+  bookingSettingsRoutes(app, { db });
   professionalRoutes(app, { db, clock });
   sessionRoutes(app, { db, clock });
   notificationRoutes(app, { db, clock });

@@ -3,3 +3,4 @@ export { generateSlots, validateWeek, type GenerateSlotsInput, type Interval, ty
 export { canMemberChange } from "./rules.ts";
 export { reminderSchedule, type PlannedReminder, type ReminderKind } from "./reminders.ts";
 export { groupSlotsByLocalDay } from "./display.ts";
+export { daysBetween, localDay, localDayBounds } from "./days.ts";
