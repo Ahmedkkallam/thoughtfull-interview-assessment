@@ -84,6 +84,9 @@ The brief leaves these open; each answer is what I think is right for the person
 - **Timezone change after sign-up:** not offered in this version. Stored times are UTC, so a change would only change how times are displayed.
 - **Professional sign-up:** anyone can register as a professional here. A real product verifies credentials first (out of scope, see production notes).
 
+## Hosting
+- **D35 No hosted demo, on purpose.** The brief makes a deployed link optional. The app needs an always-on worker (reminders every 5 seconds), one origin for the session cookie and the cross-site check, and a mail inbox that should not be public; a serverless host such as Vercel fits none of these without changes. `docker compose up` runs the whole stack locally in one command instead. The production path is a Docker-friendly host running the same services, with the API serving the built web app on one address (see the README section "Why there is no hosted demo").
+
 ## Known limitations
 These are the things I know are not finished or not strong enough for real use.
 

@@ -155,6 +155,15 @@ How the layout adapts:
 - Soft motion (fades) is switched off for people who ask their device for reduced motion.
 - Times are always shown in the viewer's own timezone, and the zone is named on the page.
 
+## Why there is no hosted demo
+A deployed demo link is optional in the brief, and I chose not to host one, even though the app could be hosted. The blockers are in how the pieces fit a typical host, not in the code:
+- **The reminder worker must run all the time.** It checks for due reminders every 5 seconds. Serverless platforms such as Vercel run code only per request, and their scheduled jobs run at most once a minute (once a day on free plans), so reminders would arrive late or not at all.
+- **The login cookie needs one address.** The browser and the API share one origin through the Vite proxy, which keeps the session cookie `SameSite=Lax` and lets the API refuse writes from other sites (it compares `Origin` with `Host`). Splitting the website and the API across two hosts would need a proxy rewrite on the host and a change to that check, which is extra risk for a demo.
+- **Email reminders go to a local test inbox.** Mailpit catches every email on the machine. Online it would either have to be exposed (a public inbox, even of fictional data, is a bad habit for a health product) or replaced by a real email provider, which the brief puts out of scope.
+- **Cost and accounts.** Postgres, the API, the worker and Mailpit as always-on services cost a few dollars a month and need a hosting account.
+
+How I would host it: one Docker-friendly platform (Railway, Render or Fly.io) running the same images as `docker-compose.yml` — managed Postgres, the API serving the built web app on one address, the worker as a background service, and a real email provider behind the existing outbox. Until then, `docker compose up` gives the full app locally in one command.
+
 ## More
 - [DECISIONS.md](DECISIONS.md): decisions and trade-offs, how double-booking is prevented, how reminders are delivered exactly once, timezones and daylight saving, assumptions, limitations, what I would change for a healthcare product.
 - [AI_USAGE.md](AI_USAGE.md): which AI tools I used, and where I corrected them.
