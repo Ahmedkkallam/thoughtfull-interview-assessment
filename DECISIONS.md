@@ -33,7 +33,10 @@ The database is the referee, not the application. Code that first checks "is thi
 - **D29 Late and stale reminders.** If the worker was down, a reminder that is overdue is still delivered once, as long as the session has not started. It is never delivered for a cancelled session or one that has already started.
 - **D30 Racing bookings take turns.** With the booking in a transaction, simultaneous bookings could deadlock inside the overlap check, which Postgres reports as an error (a 500). Booking now locks both people's user rows in id order first; racing bookings wait their turn, and the exclusion constraints still decide who wins.
 - **D31 Cancel and reschedule lock the session `FOR NO KEY UPDATE`, not `FOR UPDATE`.** The worker, while holding a session's reminder rows, inserts notifications whose foreign key takes a light `KEY SHARE` lock on that session. `FOR UPDATE` blocks that lock while the cancel waits for the same reminder rows: a deadlock. `NO KEY UPDATE` is all a status change needs and does not block foreign-key checks. A test reproduces the exact interleaving.
-- **Production:** real email, SMS or push cannot be inside the database transaction, so delivery to a provider becomes at-least-once with an idempotency key (the reminder id) that the provider uses to drop duplicates.
+- **D32 Email reminders, to a local test inbox only.** The brief puts real email delivery out of scope, so emails go only to Mailpit, a local mail catcher that Docker Compose starts (web inbox at http://localhost:8025); nothing reaches a real address and no provider keys exist. I built the delivery path anyway because it is where reliability gets interesting, and switching to a real provider is a change of SMTP settings. When a reminder is delivered in the app, the same transaction queues an email in `email_outbox` (`apps/api/src/reminders/deliver.ts`) for people who have email reminders on, so one never exists without the other.
+- **D33 Email sending is at-least-once, not exactly-once.** An SMTP send cannot be part of a database transaction: a crash after the server accepted the message but before `sent_at` is saved sends it again. `apps/api/src/email/send.ts` sends one email per transaction while holding its row (`FOR UPDATE SKIP LOCKED`, so a second sender skips it), uses the outbox id as the Message-ID on every attempt so a duplicate is recognisable, retries after 1, 5, 15 and 15 minutes and gives up after 5 attempts, and never sends for a session that was cancelled or has started. For a reminder, a rare duplicate is better than a missed one.
+- **D34 Minimal email content and a per-person switch.** The email says only that a session is coming up and when, in the recipient's own timezone, never who it is with: an inbox is often shared or shown on a lock screen. Email reminders are on by default and each person can turn them off in Settings (`PATCH /api/me/preferences`). In-app reminders are always on.
+- **Production:** with a real provider, pass the outbox id as the provider's idempotency key too, so it drops duplicates itself.
 
 ## Timezones and daylight saving
 - **D5 Storage.** Every moment (session start and end, reminder due time) is stored as UTC `timestamptz` and exchanged as ISO-8601 UTC. Working hours are stored as local wall-clock times ("Mon 09:00–17:00") plus the professional's IANA zone (`Europe/London`), never as an offset: an offset is wrong for half the year.
@@ -99,7 +102,7 @@ These are the things I know are not finished or not strong enough for real use.
 - For the demo professionals' zones (London, New York, Singapore) the live 28-day window contains no clock change until it reaches 14 March 2027 (New York) or 28 March 2027 (London), so a demo run in November 2026 cannot show daylight saving on screen. The behaviour is proven with pinned dates in `packages/domain/src/slots.test.ts`, `reminders.test.ts` and `rules.test.ts`, and in two API tests (`professionals.int.test.ts` for the London spring-forward slot, `cancel-reschedule.int.test.ts` for the 24-hour rule across it).
 
 **Reminders and notifications**
-- Reminders only exist as in-app notifications; there is no email, SMS or push (out of scope).
+- Email reminders go only to the local Mailpit inbox; there is no real email provider, SMS or push (out of scope). Emails that failed 5 times, or whose session was cancelled while a retry waited, stay unsent in `email_outbox` with nothing cleaning them up.
 - Reminders of a session that started while the worker was down stay `pending` forever. That is intended (D29: never deliver after the start), but nothing cleans those rows up.
 - The worker polls every 5 seconds and the web app polls notifications every 30 seconds (`apps/web/src/Notifications.tsx`), so a reminder can show up to about 35 seconds after it is due. There is no push channel.
 
@@ -111,7 +114,7 @@ These are the things I know are not finished or not strong enough for real use.
 ## What I would do next with more time
 In the order I would do them:
 1. **Blocked dates and a minimum booking notice.** The domain function already supports both; it needs a `blocked_dates` table (local dates in the professional's zone), a notice setting, API routes and a screen.
-2. **Real reminders by email or SMS** through a provider, sent by the same worker with the reminder id as the idempotency key (see the production section for why the delivery guarantee changes).
+2. **A real email provider and SMS**, plugged into the existing outbox and sender with the outbox id as the idempotency key, plus alerting on emails that gave up.
 3. **A cleanup job** that deletes expired `auth_sessions` and marks stale pending reminders (their session has started) as cancelled.
 4. **Change of timezone** in the account, with a note that stored times do not move and only the display changes.
 5. **Pagination** for sessions and notifications, and a "mark all read" action.
