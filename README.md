@@ -13,7 +13,7 @@ docker compose up
 ```
 The first run builds the image, so give it a few minutes. When it settles, open **http://localhost:5173**.
 
-Compose starts five things: `db` (Postgres 16), `migrate` (creates the tables and the demo accounts, then exits), `api` (port 3000), `worker` (delivers reminders) and `web` (port 5173). Press Ctrl+C to stop; `docker compose down` removes the containers (add `-v` to also delete the data).
+Compose starts six things: `db` (Postgres 16), `migrate` (creates the tables and the demo accounts, then exits), `api` (port 3000), `worker` (delivers reminders), `mailpit` (a local test inbox for reminder emails, http://localhost:8025) and `web` (port 5173). Press Ctrl+C to stop; `docker compose down` removes the containers (add `-v` to also delete the data).
 
 The seed (`apps/api/src/seed.ts`) creates these fictional accounts. All use the password `demo-password-123` (`SEED_PASSWORD` in `.env.example`).
 
@@ -46,7 +46,7 @@ Use this to run the code on your machine with only the database in Docker.
 ```bash
 cp .env.example .env          # PowerShell: Copy-Item .env.example .env
 npm install
-docker compose up -d db       # Postgres on localhost:54320
+docker compose up -d db mailpit   # Postgres on localhost:54320, test inbox on http://localhost:8025
 npm run db:migrate            # create the tables
 npm run seed                  # add the demo accounts, prints their logins
 npm run dev                   # API + reminder worker + web, one terminal
@@ -98,6 +98,8 @@ This walks through the cross-timezone case.
 6. As Lina, click **Reschedule** on the session and pick another time. The old session disappears from Upcoming and the new one replaces it; Mira gets a "moved" notification.
 7. As Lina, open the **Notifications** page (also in the header). Book a session less than 24 hours ahead and the **Cancel** and **Reschedule** buttons are disabled with "Changes are possible up to 24 hours before the start".
 8. As Mira, cancel a session (she can at any time). Lina's notifications list shows that it was cancelled, and the session appears under Past as "Cancelled by the professional".
+
+Email reminders (on by default, switchable in **Settings**) go only to the local Mailpit inbox at http://localhost:8025, never to real addresses; they say only that a session is coming up and when.
 
 Reminders appear in the Notifications list when they are due: the 24-hour one 24 hours before the start, the 1-hour one an hour before. A reminder whose time had already passed at booking is not created. The worker checks every 5 seconds and the page refreshes every 30, so allow up to about 35 seconds. To see one without waiting a day, book the soonest free slot: if it starts in 90 minutes, its 1-hour reminder arrives after 30 minutes. A slot that starts in under an hour gets no reminders at all.
 
