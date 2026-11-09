@@ -4,9 +4,29 @@ import { useState, type ReactNode } from "react";
 import { Link, useOutletContext, useParams, useSearchParams } from "react-router";
 import { api } from "./api.ts";
 import { postJson, type Me } from "./auth.ts";
-import { addDays, dayParts, formatDay, formatRange, formatTime, formatZoneName, weekStart, zoneLabel, zoneTitle } from "./format.ts";
+import { BookingSummary } from "./BookingSummary.tsx";
+import { shownDayOf, SlotCalendar } from "./Calendar.tsx";
+import { formatDay, formatRange, formatTime, zoneLabel, zoneTitle } from "./format.ts";
 import { useSessions } from "./Sessions.tsx";
-import { ArrowLeftIcon, ArrowRightIcon, Avatar, Button, buttonClass, Callout, Card, CheckIcon, PageHeader, Skeleton, Zone } from "./ui.tsx";
+import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  Avatar,
+  Bone,
+  Button,
+  buttonClass,
+  Callout,
+  CalendarIcon,
+  Card,
+  CheckIcon,
+  ClockIcon,
+  EmptyState,
+  Loading,
+  PageHeader,
+  SearchIcon,
+  stagger,
+  Zone,
+} from "./ui.tsx";
 
 type Professional = { id: string; name: string; timezone: string };
 type Booked = { id: string; startsAt: string; endsAt: string; status: string; professional: Professional };
@@ -22,6 +42,9 @@ function MemberOnly({ children }: { children: (me: Me) => ReactNode }) {
 
 const backLink = "inline-flex min-h-11 items-center gap-1.5 rounded-xl text-sm font-medium text-stone-600 hover:text-brand-700";
 
+// A neutral line under the name; the API has no title field, so only a name that says "counsellor" gets that word.
+const roleLine = (name: string) => (/counsel/i.test(name) ? "Counsellor" : "Professional");
+
 export function ProfessionalList() {
   return <MemberOnly>{() => <List />}</MemberOnly>;
 }
@@ -31,25 +54,46 @@ function List() {
   return (
     <>
       <PageHeader title="Find a professional" subtitle="Choose someone to see their free times." />
-      {pros.isPending && <Skeleton rows={3} />}
+      {pros.isPending && (
+        <Loading className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="space-y-3 rounded-card border border-stone-200/80 bg-white p-6">
+              <Bone className="size-16 rounded-full" />
+              <Bone className="h-5 w-2/3" />
+              <Bone className="h-4 w-1/2" />
+              <Bone className="mt-4 h-11" />
+            </div>
+          ))}
+        </Loading>
+      )}
       {pros.isError && <Callout>Could not load professionals: {pros.error.message}</Callout>}
-      {pros.data?.length === 0 && <Card className="text-stone-600">No professionals yet.</Card>}
-      <ul className="grid gap-4 sm:grid-cols-2">
-        {pros.data?.map((p) => (
+      {pros.data?.length === 0 && (
+        <EmptyState icon={<SearchIcon />} title="No professionals yet">
+          Please check back soon.
+        </EmptyState>
+      )}
+      <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {pros.data?.map((p, i) => (
           // The name link stretches over the card: the whole card is clickable, and the link's name stays just the name.
           <li
             key={p.id}
-            className="relative flex items-center gap-4 rounded-card border border-stone-200/80 bg-white p-5 shadow-sm transition duration-200 hover:border-brand-200 hover:shadow-md motion-safe:hover:-translate-y-0.5"
+            style={stagger(i)}
+            className="group relative flex flex-col rounded-card border border-stone-200/80 bg-white p-6 shadow-sm transition duration-200 focus-within:border-brand-300 hover:border-brand-200 hover:shadow-md motion-safe:animate-rise motion-safe:hover:-translate-y-0.5"
           >
-            <Avatar name={p.name} />
-            <div className="min-w-0">
-              <Link to={`/professionals/${p.id}`} className="font-semibold text-stone-900 after:absolute after:inset-0 after:rounded-card">
-                {p.name}
-              </Link>
-              <p className="text-sm text-stone-600">
-                <Zone prefix="Works on " zone={p.timezone} />
-              </p>
-            </div>
+            <Avatar name={p.name} size="xl" />
+            <Link to={`/professionals/${p.id}`} className="mt-4 text-lg font-semibold text-stone-900 after:absolute after:inset-0 after:rounded-card">
+              {p.name}
+            </Link>
+            <p className="text-sm font-medium text-brand-700">{roleLine(p.name)}</p>
+            <p className="mt-2 inline-flex items-center gap-1.5 text-sm text-stone-600">
+              <ClockIcon className="size-4 text-stone-400" />
+              <Zone prefix="Works on " zone={p.timezone} />
+            </p>
+            {/* Looks like a button; the stretched name link above is what you actually click. */}
+            <span aria-hidden="true" className={`${buttonClass("secondary")} mt-6 w-full group-hover:border-brand-300 group-hover:bg-brand-50`}>
+              See availability
+              <ArrowRightIcon className="size-4 transition-transform duration-200 motion-safe:group-hover:translate-x-0.5" />
+            </span>
           </li>
         ))}
       </ul>
@@ -73,16 +117,30 @@ function useRescheduleTarget() {
   return { sessionId, old, loading: !!sessionId && upcoming.isPending };
 }
 
+function ProfileLoading() {
+  return (
+    <Loading className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="space-y-6">
+        <Bone className="h-24" />
+        <Bone className="h-72" />
+      </div>
+      <Bone className="hidden h-80 lg:block" />
+    </Loading>
+  );
+}
+
 function Profile({ timezone }: { timezone: string }) {
   const id = useParams().id!;
   const target = useRescheduleTarget();
   const pro = useProfessional(id);
+  const [selected, setSelected] = useState<string | null>(null);
+  const askedDay = useSearchParams()[0].get("day");
   const slots = useQuery({
     queryKey: ["slots", id],
     queryFn: () => api<{ slots: { startsAt: string; endsAt: string }[] }>(`/api/professionals/${id}/slots`),
   });
 
-  if (pro.isPending || slots.isPending) return <Skeleton rows={4} />;
+  if (pro.isPending || slots.isPending) return <ProfileLoading />;
   if (pro.isError) return <Callout>Could not load this professional: {pro.error.message}</Callout>;
   if (slots.isError) return <Callout>Could not load free times: {slots.error.message}</Callout>;
 
@@ -90,151 +148,60 @@ function Profile({ timezone }: { timezone: string }) {
     slots.data.slots.map((s) => ({ startsAt: new Date(s.startsAt), endsAt: new Date(s.endsAt), iso: s.startsAt })),
     timezone,
   );
+  const shownDay = days.length > 0 ? shownDayOf(days, askedDay) : null;
   const slotHref = (iso: string) =>
     `/professionals/${id}/confirm?start=${encodeURIComponent(iso)}${target.sessionId ? `&reschedule=${target.sessionId}` : ""}`;
+  // A time counts only on the day being shown: switching days asks for a time again (coming back restores it).
+  // A refetch that drops the time simply clears the choice.
+  const slot = days.find((d) => d.day === shownDay)?.slots.find((s) => s.iso === selected) ?? null;
+
   return (
-    <div className="space-y-6">
+    // Extra room at the bottom on phones once the summary bar shows.
+    <div className={`space-y-6 ${slot ? "pb-20 lg:pb-0" : ""}`}>
       <Link to="/professionals" className={backLink}>
         <ArrowLeftIcon className="size-4" />
         All professionals
       </Link>
-      <Card className="flex items-center gap-4">
-        <Avatar name={pro.data.name} size="lg" />
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight text-stone-900">{pro.data.name}</h1>
-          <p className="text-sm text-stone-600">
-            <Zone prefix="Works on " zone={pro.data.timezone} />
-          </p>
-          <p className="text-sm text-stone-600">
-            <Zone prefix="Times shown in " zone={timezone} long />
-          </p>
-        </div>
-      </Card>
-      {target.old && (
-        <Callout tone="info" role="status">
-          Choose a new time for your session on {formatDay(new Date(target.old.startsAt), timezone)},{" "}
-          {formatTime(new Date(target.old.startsAt), timezone)}
-        </Callout>
-      )}
-      {days.length === 0 ? (
-        <Card className="text-center">
-          <p className="font-medium text-stone-800">No free times in the next 4 weeks</p>
-          <p className="mt-1 text-sm text-stone-600">Please check back later, or choose another professional.</p>
-        </Card>
-      ) : (
-        <SlotCalendar days={days} timezone={timezone} slotHref={slotHref} />
-      )}
-    </div>
-  );
-}
-
-type Slot = { startsAt: Date; endsAt: Date; iso: string };
-
-// One week of days at a time, then the chosen day's times. Weeks run from the first to the last day the API
-// returned slots for, so the browser's clock never decides what is shown. The chosen day lives in the URL (?day=)
-// so Back returns to it; other params (reschedule=) are kept.
-function SlotCalendar({
-  days,
-  timezone,
-  slotHref,
-}: {
-  days: { day: string; slots: Slot[] }[];
-  timezone: string;
-  slotHref: (iso: string) => string;
-}) {
-  const [params, setParams] = useSearchParams();
-  const byDay = new Map(days.map((d) => [d.day, d.slots]));
-  const asked = params.get("day");
-  const selected = asked && byDay.has(asked) ? asked : days[0]!.day;
-  const daySlots = byDay.get(selected)!;
-  // Prev/next only move the view; choosing a day snaps the view back to that day's week.
-  const [viewed, setViewed] = useState<string | null>(null);
-  const week = viewed ?? weekStart(selected);
-  const firstWeek = weekStart(days[0]!.day);
-  const lastWeek = weekStart(days.at(-1)!.day);
-  const from = dayParts(week);
-  const to = dayParts(addDays(week, 6));
-
-  const choose = (day: string) => {
-    setViewed(null);
-    setParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("day", day);
-      return next;
-    });
-  };
-
-  return (
-    <div className="space-y-6">
-      {/* Card look with tighter padding, so seven days fit side by side on a 375 px phone. */}
-      <div className="space-y-3 rounded-card border border-stone-200/80 bg-white p-3 shadow-sm sm:p-5">
-        <div className="flex items-center justify-between gap-2">
-          <Button variant="ghost" size="sm" className="w-11" aria-label="Previous week" disabled={week <= firstWeek} onClick={() => setViewed(addDays(week, -7))}>
-            <ArrowLeftIcon className="size-4" />
-          </Button>
-          <p className="text-sm font-semibold text-stone-800 tabular-nums">
-            {from.day} {from.month} – {to.day} {to.month}
-          </p>
-          <Button variant="ghost" size="sm" className="w-11" aria-label="Next week" disabled={week >= lastWeek} onClick={() => setViewed(addDays(week, 7))}>
-            <ArrowRightIcon className="size-4" />
-          </Button>
-        </div>
-        <div role="group" aria-label="Choose a day" key={week} className="grid grid-cols-7 gap-1 motion-safe:animate-fade sm:gap-2">
-          {Array.from({ length: 7 }, (_, i) => addDays(week, i)).map((day) => {
-            const count = byDay.get(day)?.length ?? 0;
-            const p = dayParts(day);
-            const on = day === selected;
-            return (
-              <button
-                key={day}
-                type="button"
-                aria-pressed={on}
-                disabled={count === 0}
-                aria-label={`${p.long}, ${count === 0 ? "no free times" : `${count} free ${count === 1 ? "time" : "times"}`}`}
-                onClick={() => choose(day)}
-                className={`flex min-h-11 flex-col items-center rounded-xl border px-0.5 py-2 leading-tight transition duration-150 disabled:cursor-not-allowed ${
-                  on
-                    ? "border-brand-700 bg-brand-700 text-white shadow-sm"
-                    : count === 0
-                      ? "border-transparent bg-stone-100/70 text-stone-400"
-                      : "border-brand-200 bg-white text-stone-800 hover:border-brand-500 hover:bg-brand-50"
-                }`}
-              >
-                <span className="text-[11px] font-medium uppercase">{p.weekday}</span>
-                <span className="text-lg font-semibold tabular-nums">{p.day}</span>
-                <span className="text-[11px]">{p.month}</span>
-                <span className={`mt-1 text-[11px] whitespace-nowrap ${on ? "text-brand-50" : count === 0 ? "" : "font-medium text-brand-700"}`}>
-                  {count === 0 ? "–" : `${count} free`}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <section aria-labelledby="slots-day" className="space-y-3">
-        {/* aria-live so screen readers hear the new day when the choice changes. */}
-        <h2 id="slots-day" aria-live="polite" className="text-lg font-semibold text-stone-900">
-          {dayParts(selected).long}
-        </h2>
-        <ul key={selected} className="grid grid-cols-2 gap-2 motion-safe:animate-fade sm:grid-cols-4">
-          {daySlots.map((s) => {
-            const label = formatRange(s.startsAt, s.endsAt, timezone);
-            // Clocks going back repeat an hour; name the zone on repeated labels so the two stay distinguishable.
-            const repeated = daySlots.filter((o) => formatRange(o.startsAt, o.endsAt, timezone) === label).length > 1;
-            return (
-              <li key={s.iso}>
-                <Link
-                  to={slotHref(s.iso)}
-                  className="flex min-h-11 items-center justify-center rounded-xl border border-brand-200 bg-white px-3 text-sm font-medium text-brand-800 tabular-nums shadow-xs transition duration-150 hover:border-brand-500 hover:bg-brand-50 hover:shadow-sm active:scale-[0.98] motion-safe:hover:-translate-y-0.5"
-                >
-                  {repeated ? `${label} ${formatZoneName(s.startsAt, timezone)}` : label}
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] xl:gap-8">
+        <div className="min-w-0 space-y-6">
+          <Card className="flex items-center gap-4">
+            <Avatar name={pro.data.name} size="lg" />
+            <div className="min-w-0">
+              <h1 className="text-2xl font-semibold tracking-tight text-stone-900">{pro.data.name}</h1>
+              <p className="text-sm text-stone-600">
+                {roleLine(pro.data.name)} · <Zone prefix="Works on " zone={pro.data.timezone} />
+              </p>
+              <p className="text-sm text-stone-600">
+                <Zone prefix="Times shown in " zone={timezone} long />
+              </p>
+            </div>
+          </Card>
+          {target.old && (
+            <Callout tone="info" role="status">
+              Choose a new time for your session on {formatDay(new Date(target.old.startsAt), timezone)},{" "}
+              {formatTime(new Date(target.old.startsAt), timezone)}
+            </Callout>
+          )}
+          {!shownDay ? (
+            <EmptyState
+              icon={<CalendarIcon />}
+              title="No free times in the next 4 weeks"
+              action={
+                <Link to="/professionals" className={buttonClass("secondary")}>
+                  Choose another professional
                 </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
+              }
+            >
+              Please check back later.
+            </EmptyState>
+          ) : (
+            <SlotCalendar days={days} shownDay={shownDay} timezone={timezone} selected={selected} onSelect={setSelected} />
+          )}
+        </div>
+        {shownDay && (
+          <BookingSummary professional={pro.data.name} day={shownDay} slot={slot} timezone={timezone} href={slot && slotHref(slot.iso)} moving={!!target.sessionId} />
+        )}
+      </div>
     </div>
   );
 }
@@ -269,7 +236,13 @@ function Confirm({ timezone }: { timezone: string }) {
     </Link>
   );
   if (Number.isNaN(start.getTime())) return <Callout>That time is not valid. {back}</Callout>;
-  if (pro.isPending || target.loading) return <Skeleton rows={2} />;
+  if (pro.isPending || target.loading)
+    return (
+      <Loading className="mx-auto max-w-lg space-y-4">
+        <Bone className="h-10 w-2/3" />
+        <Bone className="h-72" />
+      </Loading>
+    );
   if (pro.isError) return <Callout>Could not load this professional: {pro.error.message}</Callout>;
 
   if (book.isSuccess) {
@@ -295,50 +268,73 @@ function Confirm({ timezone }: { timezone: string }) {
   }
 
   const end = new Date(start.getTime() + SESSION_MINUTES * 60_000);
-  const row = "flex flex-col gap-0.5 py-3 sm:flex-row sm:justify-between sm:gap-4";
+  const row = "flex items-start gap-3 px-6 py-4";
   return (
-    <div className="mx-auto max-w-lg space-y-5">
+    <div className="mx-auto max-w-lg">
+      <Link to={`/professionals/${id}`} className={`${backLink} mb-4`}>
+        <ArrowLeftIcon className="size-4" />
+        Back
+      </Link>
       <PageHeader title={moving ? "Move your session" : "Confirm your session"} subtitle="Please check the details before you continue." />
-      {target.old && (
-        <Callout tone="info">
-          Currently {formatDay(new Date(target.old.startsAt), timezone)},{" "}
-          {formatRange(new Date(target.old.startsAt), new Date(target.old.endsAt), timezone)} ({zoneLabel(timezone)})
-        </Callout>
-      )}
-      <Card>
-        <dl className="divide-y divide-stone-100">
-          <div className={row}>
-            <dt className="text-sm text-stone-600">Professional</dt>
-            <dd className="font-medium text-stone-900">{pro.data.name}</dd>
+      <div className="space-y-5">
+        {target.old && (
+          <Callout tone="info">
+            Currently {formatDay(new Date(target.old.startsAt), timezone)},{" "}
+            {formatRange(new Date(target.old.startsAt), new Date(target.old.endsAt), timezone)} ({zoneLabel(timezone)})
+          </Callout>
+        )}
+        <div className="overflow-hidden rounded-card border border-stone-200/80 bg-white shadow-sm">
+          <div className="flex items-center gap-4 bg-linear-to-br from-brand-50 to-sand-100 px-6 py-5">
+            <Avatar name={pro.data.name} size="lg" />
+            <div className="min-w-0">
+              <p className="text-lg font-semibold text-stone-900">{pro.data.name}</p>
+              <p className="text-sm text-stone-600">
+                <Zone prefix="Works on " zone={pro.data.timezone} />
+              </p>
+            </div>
           </div>
-          <div className={row}>
-            <dt className="text-sm text-stone-600">Date</dt>
-            <dd className="font-medium text-stone-900">{formatDay(start, timezone)}</dd>
-          </div>
-          <div className={row}>
-            <dt className="text-sm text-stone-600">Time</dt>
-            <dd title={zoneTitle(timezone)} className="font-medium text-stone-900 tabular-nums">
-              {formatRange(start, end, timezone)} ({zoneLabel(timezone)})
-            </dd>
-          </div>
-          <div className={row}>
-            <dt className="text-sm text-stone-600">Length</dt>
-            <dd className="font-medium text-stone-900">{SESSION_MINUTES} minutes</dd>
-          </div>
-        </dl>
-      </Card>
-      {book.isError && (
-        <Callout>
-          {book.error.message} {back}
-        </Callout>
-      )}
-      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-        <Link className={buttonClass("secondary")} to={`/professionals/${id}`}>
-          Back
-        </Link>
-        <Button onClick={() => book.mutate()} disabled={book.isPending}>
-          {book.isPending ? (moving ? "Moving…" : "Booking…") : moving ? "Move session" : "Book session"}
-        </Button>
+          <dl className="divide-y divide-stone-100">
+            <div className={row}>
+              <CalendarIcon className="mt-0.5 size-5 shrink-0 text-brand-700" />
+              <div>
+                <dt className="text-xs text-stone-500">Date</dt>
+                <dd className="font-medium text-stone-900">{formatDay(start, timezone)}</dd>
+              </div>
+            </div>
+            <div className={row}>
+              <ClockIcon className="mt-0.5 size-5 shrink-0 text-brand-700" />
+              <div>
+                <dt className="text-xs text-stone-500">Time</dt>
+                <dd title={zoneTitle(timezone)} className="font-medium text-stone-900 tabular-nums">
+                  {formatRange(start, end, timezone)} ({zoneLabel(timezone)})
+                </dd>
+              </div>
+            </div>
+            <div className={row}>
+              <span aria-hidden="true" className="size-5 shrink-0" />
+              <div>
+                <dt className="text-xs text-stone-500">Length</dt>
+                <dd className="font-medium text-stone-900">{SESSION_MINUTES} minutes</dd>
+              </div>
+            </div>
+          </dl>
+          <p className="border-t border-stone-100 bg-sand-50 px-6 py-3 text-sm text-stone-600">
+            {moving ? "Your reminders move with the session." : "You'll get reminders 24 hours and 1 hour before."}
+          </p>
+        </div>
+        {book.isError && (
+          <Callout>
+            {book.error.message} {back}
+          </Callout>
+        )}
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <Link className={buttonClass("secondary")} to={`/professionals/${id}`}>
+            Choose another time
+          </Link>
+          <Button onClick={() => book.mutate()} disabled={book.isPending}>
+            {book.isPending ? (moving ? "Moving…" : "Booking…") : moving ? "Move session" : "Book session"}
+          </Button>
+        </div>
       </div>
     </div>
   );

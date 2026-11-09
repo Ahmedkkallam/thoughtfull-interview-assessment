@@ -25,7 +25,7 @@ export function Login() {
   return (
     <form onSubmit={submit} className="space-y-5">
       <div>
-        <h2 className="text-xl font-semibold text-stone-900">Log in</h2>
+        <h1 className="text-2xl font-semibold tracking-tight text-stone-900">Log in</h1>
         <p className="mt-1 text-sm text-stone-600">Welcome back. It's good to see you.</p>
       </div>
       <Field id="email" label="Email">

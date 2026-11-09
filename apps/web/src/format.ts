@@ -70,3 +70,19 @@ export function dayParts(day: string) {
   const long = parts(toUtc(day), "UTC", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   return { weekday: short.weekday!, day: short.day!, month: short.month!, long: `${long.weekday} ${long.day} ${long.month} ${long.year}` };
 }
+
+// The calendar day ("2027-01-05") an instant falls on in a zone: used to group sessions and notifications by day.
+export function localDay(date: Date, timeZone: string): string {
+  const p = parts(date, timeZone, { year: "numeric", month: "2-digit", day: "2-digit" });
+  return `${p.year}-${p.month}-${p.day}`;
+}
+
+// "in 3 hours", "tomorrow", "in 4 days": a friendly hint next to the exact time, never instead of it.
+export function relativeTime(date: Date, now: Date): string {
+  const rtf = new Intl.RelativeTimeFormat("en-GB", { numeric: "auto" });
+  const minutes = Math.round((date.getTime() - now.getTime()) / 60_000);
+  if (Math.abs(minutes) < 60) return rtf.format(minutes, "minute");
+  const hours = Math.round(minutes / 60);
+  if (Math.abs(hours) < 24) return rtf.format(hours, "hour");
+  return rtf.format(Math.round(hours / 24), "day");
+}

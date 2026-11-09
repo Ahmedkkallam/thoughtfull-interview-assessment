@@ -6,6 +6,7 @@ import { Login } from "./Login.tsx";
 import { BookingConfirm, ProfessionalList, ProfessionalProfile } from "./Professionals.tsx";
 import { NotificationList } from "./Notifications.tsx";
 import { Sessions } from "./Sessions.tsx";
+import { Settings } from "./Settings.tsx";
 import { Signup } from "./Signup.tsx";
 
 export const routes: RouteObject[] = [
@@ -16,6 +17,7 @@ export const routes: RouteObject[] = [
       { path: "/sessions", element: <Sessions /> },
       { path: "/notifications", element: <NotificationList /> },
       { path: "/availability", element: <Availability /> },
+      { path: "/settings", element: <Settings /> },
       { path: "/professionals", element: <ProfessionalList /> },
       { path: "/professionals/:id", element: <ProfessionalProfile /> },
       { path: "/professionals/:id/confirm", element: <BookingConfirm /> },

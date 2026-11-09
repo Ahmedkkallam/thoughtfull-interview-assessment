@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { addDays, dayParts, formatDay, formatRange, formatTime, weekStart, zoneLabel, zoneLongName, zoneOption } from "./format.ts";
+import { addDays, dayParts, formatDay, formatRange, formatTime, localDay, relativeTime, weekStart, zoneLabel, zoneLongName, zoneOption } from "./format.ts";
 
 test("half-hour zone (Asia/Kolkata) shows :30 and rolls into the next day", () => {
   const start = new Date("2027-01-04T20:00:00Z");
@@ -42,4 +42,19 @@ test("calendar days step across month, year and the clock change without driftin
   expect(weekStart("2027-01-05")).toBe("2027-01-04"); // Tuesday -> Monday
   expect(weekStart("2027-01-10")).toBe("2027-01-04"); // Sunday -> the Monday before
   expect(dayParts("2027-01-05")).toEqual({ weekday: "Tue", day: "5", month: "Jan", long: "Tuesday 5 January 2027" });
+});
+
+test("the local day follows the viewer's zone, not UTC", () => {
+  const instant = new Date("2027-01-04T16:00:00Z"); // Monday afternoon in London
+  expect(localDay(instant, "Europe/London")).toBe("2027-01-04");
+  expect(localDay(instant, "Asia/Singapore")).toBe("2027-01-05"); // already Tuesday midnight
+  expect(localDay(new Date("2027-11-07T06:30:00Z"), "America/New_York")).toBe("2027-11-07"); // the repeated 01:30
+});
+
+test("relative hints round to minutes, hours, then days", () => {
+  const now = new Date("2026-11-09T10:00:00Z");
+  expect(relativeTime(new Date("2026-11-09T10:20:00Z"), now)).toBe("in 20 minutes");
+  expect(relativeTime(new Date("2026-11-09T15:00:00Z"), now)).toBe("in 5 hours");
+  expect(relativeTime(new Date("2026-11-10T10:00:00Z"), now)).toBe("tomorrow");
+  expect(relativeTime(new Date("2026-11-12T09:00:00Z"), now)).toBe("in 3 days");
 });

@@ -41,7 +41,7 @@ export function Signup() {
   return (
     <form onSubmit={submit} className="space-y-5">
       <div>
-        <h2 className="text-xl font-semibold text-stone-900">Create your account</h2>
+        <h1 className="text-2xl font-semibold tracking-tight text-stone-900">Create your account</h1>
         <p className="mt-1 text-sm text-stone-600">It only takes a minute.</p>
       </div>
       <Field id="name" label="Name">

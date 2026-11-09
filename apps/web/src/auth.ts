@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiError } from "./api.ts";
 
-export type Me = { id: string; role: "member" | "professional"; name: string; timezone: string };
+export type Me = { id: string; role: "member" | "professional"; name: string; timezone: string; emailReminders: boolean };
 
 // Signed out is a normal answer (null), not an error, so guards can just read it.
 export function useMe() {
