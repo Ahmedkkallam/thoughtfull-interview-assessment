@@ -138,9 +138,23 @@ These are taken from the running app with the demo accounts, on a 1440 px deskto
 | --- | --- |
 | <img src="docs/screenshots/desktop-availability.png" alt="Working hours, Monday open (Dr. Mira Okafor, London time), desktop" width="520"> | <img src="docs/screenshots/phone-availability.png" alt="Working hours, Monday open (Dr. Mira Okafor, London time), phone" width="200"> |
 
-**Settings (phone)**
+**Professional home with upcoming time off (Dr. Mira Okafor)**
 
-<img src="docs/screenshots/phone-settings.png" alt="Settings, phone" width="200">
+| Desktop | Phone |
+| --- | --- |
+| <img src="docs/screenshots/desktop-pro-dashboard.png" alt="Professional home with upcoming time off (Dr. Mira Okafor), desktop" width="520"> | <img src="docs/screenshots/phone-pro-dashboard.png" alt="Professional home with upcoming time off (Dr. Mira Okafor), phone" width="200"> |
+
+**Time off, with a warning for a day that still has a booking**
+
+| Desktop | Phone |
+| --- | --- |
+| <img src="docs/screenshots/desktop-timeoff.png" alt="Time off, with a warning for a day that still has a booking, desktop" width="520"> | <img src="docs/screenshots/phone-timeoff.png" alt="Time off, with a warning for a day that still has a booking, phone" width="200"> |
+
+**Settings: email reminders and the booking notice**
+
+| Desktop | Phone |
+| --- | --- |
+| <img src="docs/screenshots/desktop-settings.png" alt="Settings: email reminders and the booking notice, desktop" width="520"> | <img src="docs/screenshots/phone-settings.png" alt="Settings: email reminders and the booking notice, phone" width="200"> |
 
 **Reminder email (local Mailpit inbox)**
 
@@ -154,6 +168,7 @@ How the layout adapts:
 - The week calendar keeps all 7 days on a 375 px phone; the day buttons just get narrower.
 - In the working-hours accordion each day's summary moves under its name and the start and end inputs shrink to share one row, so a day still fits on a 375 px screen.
 - I checked that nothing scrolls sideways at 375 px.
+- The time-off form stacks into one column on a phone, and the "still booked" warning wraps inside its badge.
 - Soft motion (fades) is switched off for people who ask their device for reduced motion.
 - Times are always shown in the viewer's own timezone, and the zone is named on the page.
 
