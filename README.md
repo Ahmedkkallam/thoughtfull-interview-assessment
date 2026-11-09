@@ -9,9 +9,9 @@ Double-booking, the 24-hour cancel rule and exactly-once reminders are enforced 
 
 ## Quick start
 ```bash
-docker compose up
+docker compose up --build
 ```
-The first run builds the image, so give it a few minutes. When it settles, open **http://localhost:5173**.
+The first run builds the image, so give it a few minutes. When it settles, open **http://localhost:5173**. `--build` makes sure the image matches the code you have: plain `docker compose up` reuses an image built earlier, even if the code has changed since.
 
 Compose starts six things: `db` (Postgres 16), `migrate` (creates the tables and the demo accounts, then exits), `api` (port 3000), `worker` (delivers reminders), `mailpit` (a local test inbox for reminder emails, http://localhost:8025) and `web` (port 5173). Press Ctrl+C to stop; `docker compose down` removes the containers (add `-v` to also delete the data).
 
