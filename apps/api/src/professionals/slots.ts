@@ -3,6 +3,7 @@ import { and, eq, gt, or } from "drizzle-orm";
 import { getWorkingHours } from "../availability/routes.ts";
 import type { Db } from "../db/client.ts";
 import { sessions, users } from "../db/schema.ts";
+import type { Tx } from "../sessions/writes.ts";
 import { upcomingBlockedDays } from "../time-off/routes.ts";
 
 // Booked sessions of both the professional and the member, so a listed slot is free for both.
@@ -25,7 +26,7 @@ export async function getBusyIntervals(
 // Every slot in the professional's working hours for the next 28 days, minus `busy`, their
 // blocked days and anything inside their minimum notice.
 export async function listWorkingSlots(
-  db: Db,
+  db: Db | Tx,
   { professionalId, now, busy = [] }: { professionalId: string; now: Date; busy?: Interval[] },
 ): Promise<Interval[]> {
   const [pro] = await db

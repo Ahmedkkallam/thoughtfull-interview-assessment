@@ -333,6 +333,73 @@ describe("blocking a day while a member books it", () => {
   });
 });
 
+describe("changing hours or notice while a member books", () => {
+  const ten = "2027-01-04T10:00:00.000Z"; // two hours after the pinned clock, 10:00 in London
+
+  // Stands in for a settings save that has locked the professional's row and changed it but not yet
+  // committed. The booking is started, shown to be waiting on that lock, then the change commits.
+  async function racingChange(pro: User, change: string, params: unknown[], request: () => ReturnType<typeof book>) {
+    const holder = await pool.connect();
+    await holder.query("BEGIN");
+    await holder.query("SELECT 1 FROM users WHERE id = $1 FOR NO KEY UPDATE", [pro.id]);
+    await holder.query(change, params);
+    const res = request();
+    await lockWaiters(1);
+    await holder.query("COMMIT");
+    holder.release();
+    return res;
+  }
+
+  it("refuses a slot whose working hours are removed while the booking waits", async () => {
+    const mira = await professional();
+    const leo = await member();
+    const res = await racingChange(mira, "DELETE FROM working_hours WHERE professional_id = $1", [mira.id], () =>
+      book(leo, mira, ten),
+    );
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error.code).toBe("SLOT_NOT_AVAILABLE");
+    expect(await count("sessions")).toBe(0);
+  });
+
+  it("refuses with the new notice when the notice is raised while the booking waits", async () => {
+    const mira = await professional();
+    const leo = await member();
+    const res = await racingChange(mira, "UPDATE users SET min_notice_minutes = 1440 WHERE id = $1", [mira.id], () =>
+      book(leo, mira, ten),
+    );
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error).toEqual({ code: "TOO_SOON", message: "This professional needs at least 24 hours notice." });
+    expect(await count("sessions")).toBe(0);
+  });
+
+  it("refuses a reschedule onto hours removed while it waits, and keeps the old session", async () => {
+    const mira = await professional();
+    const leo = await member();
+    const old = (await book(leo, mira, "2027-01-08T10:00:00.000Z")).json();
+    const res = await racingChange(mira, "DELETE FROM working_hours WHERE professional_id = $1", [mira.id], () =>
+      call(leo, "POST", `/api/sessions/${old.id}/reschedule`, { startsAt: "2027-01-07T10:00:00.000Z" }),
+    );
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error.code).toBe("SLOT_NOT_AVAILABLE");
+    expect(await count("sessions WHERE status = 'booked'")).toBe(1);
+    expect(await count("sessions WHERE id = $1 AND status = 'booked'", [old.id])).toBe(1);
+  });
+
+  it("makes a notice change wait for a booking that holds the professional's row", async () => {
+    const mira = await professional();
+    const holder = await pool.connect();
+    await holder.query("BEGIN");
+    // The same lock a booking takes before it reads the professional's slots.
+    await holder.query("SELECT 1 FROM users WHERE id = $1 FOR NO KEY UPDATE", [mira.id]);
+    const saved = setNotice(mira, 1440);
+    await lockWaiters(1);
+    expect((await holder.query("SELECT min_notice_minutes AS n FROM users WHERE id = $1", [mira.id])).rows).toEqual([{ n: 0 }]);
+    await holder.query("COMMIT");
+    holder.release();
+    expect((await saved).json()).toEqual({ minNoticeMinutes: 1440 });
+  });
+});
+
 describe("demo data", () => {
   it("gives the demo professionals 2 hours' notice and Dr. Mira Okafor one weekday off, also when run twice", async () => {
     // Friday 2027-01-08: three weeks ahead is Friday 29 January.

@@ -8,8 +8,7 @@ import { sessions, users } from "../db/schema.ts";
 import { HttpError } from "../errors.ts";
 import { findProfessional } from "../professionals/routes.ts";
 import { listWorkingSlots } from "../professionals/slots.ts";
-import { isBlockedDay } from "../time-off/routes.ts";
-import { assertChangeable, cancelSession, insertSession, lockPeople, notFound, notify, ownSession } from "./writes.ts";
+import { assertChangeable, cancelSession, insertSession, lockPeople, notFound, notify, ownSession, type Tx } from "./writes.ts";
 
 // z.object drops unknown keys: a client-sent member id or end time never reaches the database.
 const bookBody = z.object({
@@ -27,13 +26,9 @@ export function sessionRoutes(app: FastifyInstance, { db, clock }: { db: Db; clo
     const pro = await findProfessional(db, body.professionalId);
     const now = clock.now();
 
-    const slot = await findSlot(db, pro.id, body.startsAt, now);
-    if (!slot) throw unavailable(pro, body.startsAt, now);
-
     const row = await db.transaction(async (tx) => {
       await lockPeople(tx, [req.user!.id, pro.id]);
-      // Asked again under the lock: the professional may have blocked the day since findSlot read it.
-      if (await isBlockedDay(tx, pro, slot.startsAt)) throw slotNotAvailable();
+      const slot = await lockedSlot(tx, pro.id, body.startsAt, now);
       return insertSession(tx, { professionalId: pro.id, memberId: req.user!.id, slot, now });
     });
 
@@ -94,7 +89,6 @@ export function sessionRoutes(app: FastifyInstance, { db, clock }: { db: Db; clo
         .where(ownSession(req.params.id, me));
       if (!old) throw notFound();
       const pro = await findProfessional(db, old.professionalId);
-      const slot = await findSlot(db, pro.id, body.startsAt, now);
 
       const row = await db.transaction(async (tx) => {
         // Same order as booking (both people, then the session), so a reschedule and a booking
@@ -111,9 +105,7 @@ export function sessionRoutes(app: FastifyInstance, { db, clock }: { db: Db; clo
         if (locked!.startsAt.getTime() === new Date(body.startsAt).getTime()) {
           throw new HttpError(422, "SAME_TIME", "That is already the time of this session.");
         }
-        if (!slot) throw unavailable(pro, body.startsAt, now);
-        // Same re-check under the lock as booking.
-        if (await isBlockedDay(tx, pro, slot.startsAt)) throw slotNotAvailable();
+        const slot = await lockedSlot(tx, pro.id, body.startsAt, now);
 
         // Cancel first: otherwise the member's own old session blocks a new time that overlaps it.
         await cancelSession(tx, { id: old.id, by: me.id, reason: "rescheduled", now });
@@ -178,14 +170,16 @@ export function sessionRoutes(app: FastifyInstance, { db, clock }: { db: Db; clo
 // The start must be on the professional's slot grid, which rules out past, off-grid,
 // outside-hours, beyond-28-days, blocked-day and inside-the-notice times. Other bookings are not checked here on purpose:
 // the database constraints decide, and they also hold when two requests race.
-async function findSlot(db: Db, professionalId: string, startsAtIso: string, now: Date) {
+// Called only after lockPeople: saving hours, notice or a day off locks the same row, so the settings read
+// here are final until this transaction ends, and a change saved meanwhile is seen, not missed.
+async function lockedSlot(tx: Tx, professionalId: string, startsAtIso: string, now: Date) {
   const startsAt = new Date(startsAtIso).getTime();
-  const slots = await listWorkingSlots(db, { professionalId, now });
-  return slots.find((s) => s.startsAt.getTime() === startsAt);
+  const slots = await listWorkingSlots(tx, { professionalId, now });
+  const slot = slots.find((s) => s.startsAt.getTime() === startsAt);
+  // The notice is read again here too: it may have changed while this request waited for the lock.
+  if (!slot) throw unavailable(await findProfessional(tx, professionalId), startsAtIso, now);
+  return slot;
 }
-
-const slotNotAvailable = () =>
-  new HttpError(422, "SLOT_NOT_AVAILABLE", "This time is not one of the professional's slots");
 
 // Picks the error for a start that is not a slot. Inside the notice window the member is told why;
 // anything else, a blocked day included, is just "not available", so time off is never revealed.
@@ -195,7 +189,7 @@ function unavailable(pro: { minNoticeMinutes: number }, startsAtIso: string, now
     const hours = pro.minNoticeMinutes / 60; // every allowed notice is whole hours
     return new HttpError(422, "TOO_SOON", `This professional needs at least ${hours} hour${hours === 1 ? "" : "s"} notice.`);
   }
-  return slotNotAvailable();
+  return new HttpError(422, "SLOT_NOT_AVAILABLE", "This time is not one of the professional's slots");
 }
 
 function bookingJson(

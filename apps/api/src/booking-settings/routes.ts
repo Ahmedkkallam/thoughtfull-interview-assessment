@@ -23,6 +23,8 @@ export function bookingSettingsRoutes(app: FastifyInstance, { db }: { db: Db }) 
 
   app.put("/api/booking-settings", professionalOnly, async (req) => {
     const { minNoticeMinutes } = putBody.parse(req.body);
+    // No explicit lock needed: an UPDATE of the row takes the same row lock as lockPeople, so a booking
+    // that holds it finishes first, and one that comes after reads the new notice.
     const [row] = await db
       .update(users)
       .set({ minNoticeMinutes })

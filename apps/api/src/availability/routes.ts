@@ -6,7 +6,7 @@ import { requireRole } from "../auth/guards.ts";
 import type { Db } from "../db/client.ts";
 import { workingHours } from "../db/schema.ts";
 import { HttpError } from "../errors.ts";
-import { lockPeople } from "../sessions/writes.ts";
+import { lockPeople, type Tx } from "../sessions/writes.ts";
 
 // Only the shape is checked here; weekday range, time format, overlaps and midnight are validateWeek's job.
 const putBody = z.object({
@@ -16,7 +16,7 @@ const putBody = z.object({
 // Postgres returns time as "09:00:00"; the API speaks "HH:mm".
 const hhmm = (t: string) => t.slice(0, 5);
 
-export async function getWorkingHours(db: Db, professionalId: string): Promise<WorkingHours[]> {
+export async function getWorkingHours(db: Db | Tx, professionalId: string): Promise<WorkingHours[]> {
   const rows = await db
     .select({ weekday: workingHours.weekday, start: workingHours.startTime, end: workingHours.endTime })
     .from(workingHours)

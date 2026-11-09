@@ -27,17 +27,6 @@ export async function upcomingBlockedDays(db: Db | Tx, professionalId: string, t
   return rows.map((r) => r.day);
 }
 
-// The one place that asks "is this start on a blocked day?". Booking and reschedule call it inside
-// their transaction after locking the professional's row, which blocking a day also locks: so a
-// block and a booking of the same day take turns, and the second one sees the first.
-export async function isBlockedDay(tx: Tx, pro: { id: string; timezone: string }, startsAt: Date): Promise<boolean> {
-  const [row] = await tx
-    .select({ day: blockedDates.day })
-    .from(blockedDates)
-    .where(and(eq(blockedDates.professionalId, pro.id), eq(blockedDates.day, localDay(startsAt, pro.timezone))));
-  return row !== undefined;
-}
-
 // Booked sessions per local day, so the professional sees what a blocked day still holds.
 // Day bounds come from the domain (Luxon), so a 23- or 25-hour day counts right.
 async function bookedSessionsByDay(db: Db | Tx, professionalId: string, zone: string, days: string[]) {

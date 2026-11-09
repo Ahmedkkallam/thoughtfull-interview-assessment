@@ -6,6 +6,7 @@ import type { Clock } from "../clock.ts";
 import type { Db } from "../db/client.ts";
 import { users } from "../db/schema.ts";
 import { HttpError } from "../errors.ts";
+import type { Tx } from "../sessions/writes.ts";
 import { listFreeSlots } from "./slots.ts";
 
 // Only these columns leave the server: no email, no hash.
@@ -13,7 +14,7 @@ const publicColumns = { id: users.id, name: users.name, timezone: users.timezone
 
 // A malformed id is just "not found", so Postgres never sees it and cannot throw.
 // The notice is public: a member needs it to understand why near slots are missing.
-export async function findProfessional(db: Db, rawId: string) {
+export async function findProfessional(db: Db | Tx, rawId: string) {
   const id = z.uuid().safeParse(rawId);
   if (!id.success) throw new HttpError(404, "NOT_FOUND", "Professional not found");
   const [pro] = await db
