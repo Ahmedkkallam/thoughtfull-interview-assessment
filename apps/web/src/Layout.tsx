@@ -3,7 +3,7 @@ import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from "react
 import { api } from "./api.ts";
 import { useMe, type Me } from "./auth.ts";
 import { useNotifications } from "./Notifications.tsx";
-import { Badge, Button, Callout, LeafIcon, Skeleton } from "./ui.tsx";
+import { Badge, Button, Callout, LeafIcon, Skeleton, Zone } from "./ui.tsx";
 
 const roleLabel = { member: "Member", professional: "Professional" };
 
@@ -79,7 +79,9 @@ export function RequireAuth() {
             </Link>
             <div className="order-last w-full text-xs text-stone-600 sm:order-none sm:ml-auto sm:w-auto sm:text-right">
               <span className="font-medium text-stone-800">{me.data.name}</span> <Badge>{roleLabel[me.data.role]}</Badge>
-              <span className="block">Times shown in {me.data.timezone}</span>
+              <span className="block">
+                <Zone prefix="Times shown in " zone={me.data.timezone} />
+              </span>
             </div>
             <Button variant="ghost" size="sm" className="ml-auto sm:ml-0" onClick={() => logout.mutate()} disabled={logout.isPending}>
               Log out

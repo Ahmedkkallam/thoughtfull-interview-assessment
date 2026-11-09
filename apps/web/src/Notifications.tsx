@@ -4,7 +4,7 @@ import { useOutletContext } from "react-router";
 import { api } from "./api.ts";
 import { postJson, type Me } from "./auth.ts";
 import { formatDay, formatTime } from "./format.ts";
-import { BellIcon, Button, CalendarIcon, Callout, Card, CrossIcon, PageHeader, Skeleton } from "./ui.tsx";
+import { BellIcon, Button, CalendarIcon, Callout, Card, CrossIcon, PageHeader, Skeleton, Zone } from "./ui.tsx";
 
 type Notification = {
   id: string;
@@ -58,7 +58,7 @@ export function NotificationList() {
 
   return (
     <>
-      <PageHeader title="Notifications" subtitle={`Times shown in ${me.timezone}`} />
+      <PageHeader title="Notifications" subtitle={<Zone prefix="Times shown in " zone={me.timezone} long />} />
       <div className="space-y-3">
         {list.isPending && <Skeleton rows={3} />}
         {list.isError && <Callout>Could not load notifications: {list.error.message}</Callout>}

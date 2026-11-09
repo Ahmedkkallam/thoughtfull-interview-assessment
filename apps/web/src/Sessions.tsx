@@ -4,7 +4,7 @@ import { Link, useOutletContext } from "react-router";
 import { api } from "./api.ts";
 import { postJson, type Me } from "./auth.ts";
 import { formatDay, formatRange } from "./format.ts";
-import { Badge, Button, buttonClass, Callout, Card, PageHeader, Skeleton } from "./ui.tsx";
+import { Badge, Button, buttonClass, Callout, Card, PageHeader, Skeleton, Zone } from "./ui.tsx";
 
 export type SessionItem = {
   id: string;
@@ -32,7 +32,7 @@ export function Sessions() {
   const me = useOutletContext<Me>();
   return (
     <>
-      <PageHeader title={me.role === "member" ? "My sessions" : "My schedule"} subtitle={`Times shown in ${me.timezone}`} />
+      <PageHeader title={me.role === "member" ? "My sessions" : "My schedule"} subtitle={<Zone prefix="Times shown in " zone={me.timezone} long />} />
       <div className="space-y-10">
         <Section scope="upcoming" title="Upcoming" me={me} />
         <Section scope="past" title="Past" me={me} />

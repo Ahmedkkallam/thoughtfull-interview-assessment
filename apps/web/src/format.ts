@@ -27,3 +27,46 @@ export function formatZoneName(date: Date, timeZone: string): string {
   const p = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "short" }).formatToParts(date);
   return p.find((x) => x.type === "timeZoneName")?.value ?? "";
 }
+
+// "America/New_York" -> "New York time": the city people recognise; the IANA name stays in a title attribute.
+export function zoneLabel(timeZone: string): string {
+  if (!timeZone.includes("/")) return timeZone; // "UTC"
+  if (timeZone.startsWith("Etc/")) return zoneLongName(timeZone); // "Etc/GMT+5" means UTC-5, so its own name would mislead
+  return `${timeZone.split("/").at(-1)!.replaceAll("_", " ")} time`;
+}
+
+// "Singapore Standard Time"; depends on the date because of summer time ("British Summer Time").
+export function zoneLongName(timeZone: string, at: Date = new Date()): string {
+  return parts(at, timeZone, { timeZoneName: "long" }).timeZoneName ?? timeZone;
+}
+
+// Tooltip text: "Asia/Singapore · Singapore Standard Time".
+export function zoneTitle(timeZone: string): string {
+  return `${timeZone} · ${zoneLongName(timeZone)}`;
+}
+
+// Signup option text: "New York (America/New_York)".
+export function zoneOption(timeZone: string): string {
+  return timeZone.includes("/") ? `${timeZone.split("/").at(-1)!.replaceAll("_", " ")} (${timeZone})` : timeZone;
+}
+
+// ---- calendar days ("2027-01-05"): plain dates with no zone, so UTC arithmetic on them is safe ----
+const toUtc = (day: string) => new Date(`${day}T12:00:00Z`);
+
+export function addDays(day: string, n: number): string {
+  const d = toUtc(day);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+// The Monday on or before the day (weeks start on Monday, as in the hours editor).
+export function weekStart(day: string): string {
+  return addDays(day, -((toUtc(day).getUTCDay() + 6) % 7));
+}
+
+// { weekday: "Tue", day: "5", month: "Jan", long: "Tuesday 5 January 2027" }
+export function dayParts(day: string) {
+  const short = parts(toUtc(day), "UTC", { weekday: "short", day: "numeric", month: "short" });
+  const long = parts(toUtc(day), "UTC", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  return { weekday: short.weekday!, day: short.day!, month: short.month!, long: `${long.weekday} ${long.day} ${long.month} ${long.year}` };
+}

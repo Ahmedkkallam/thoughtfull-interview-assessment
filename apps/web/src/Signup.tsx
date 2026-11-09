@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router";
 import { postJson, type Me } from "./auth.ts";
+import { zoneOption } from "./format.ts";
 import { Button, Callout, Field, inputClass } from "./ui.tsx";
 
 // The browser's own zone is the default; it is added if the list lacks it (e.g. Asia/Kolkata in some engines).
@@ -85,7 +86,7 @@ export function Signup() {
         <select id="timezone" value={timezone} onChange={(e) => setTimezone(e.target.value)} className={inputClass}>
           {timezoneOptions(browserZone).map((z) => (
             <option key={z} value={z}>
-              {z}
+              {zoneOption(z)}
             </option>
           ))}
         </select>

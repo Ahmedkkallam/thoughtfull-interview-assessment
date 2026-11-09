@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { zoneLabel, zoneLongName, zoneTitle } from "./format.ts";
 
 // A few shared building blocks so the pages read as content, not as long class strings.
 
@@ -117,6 +118,19 @@ export function Avatar({ name, size = "md" }: { name: string; size?: "md" | "lg"
   return (
     <span aria-hidden="true" className={`inline-flex shrink-0 items-center justify-center rounded-full bg-brand-100 font-semibold text-brand-800 ${sizing}`}>
       {initials}
+    </span>
+  );
+}
+
+// "Times shown in Singapore time": the IANA id and the long name are on hover; `long` also writes the long name out
+// where there is room. The prefix lives in the same element so the sentence reads (and is found) as one.
+export function Zone({ zone, prefix = "", long = false }: { zone: string; prefix?: string; long?: boolean }) {
+  const longName = zoneLongName(zone);
+  return (
+    <span title={zoneTitle(zone)}>
+      {prefix}
+      {zoneLabel(zone)}
+      {long && <span className="text-stone-500"> · {longName}</span>}
     </span>
   );
 }

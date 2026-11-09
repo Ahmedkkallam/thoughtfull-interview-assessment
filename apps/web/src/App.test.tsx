@@ -73,7 +73,7 @@ test("signing up sends the chosen role and timezone, then lands on the home page
     timezone: "Asia/Singapore",
   });
   expect(await screen.findByText("Welcome, Dr. Mira")).toBeTruthy();
-  expect(screen.getByText("Times shown in Europe/London")).toBeTruthy();
+  expect(screen.getByText("Times shown in London time").getAttribute("title")).toMatch(/^Europe\/London · /);
 });
 
 test("the timezone picker starts on the browser's timezone", async () => {
@@ -128,7 +128,7 @@ test("the editor shows the saved ranges for each day in the professional's timez
   expect(((await screen.findByLabelText("Monday range 1 start")) as HTMLInputElement).value).toBe("09:00");
   expect((screen.getByLabelText("Monday range 2 end") as HTMLInputElement).value).toBe("17:00");
   expect(screen.queryByLabelText("Tuesday range 1 start")).toBeNull();
-  expect(screen.getByText(/Times are in your timezone \(Europe\/London\)/)).toBeTruthy();
+  expect(screen.getByText("Hours are in London time")).toBeTruthy();
 });
 
 test("adding a range and saving sends the whole week", async () => {
@@ -192,7 +192,7 @@ test("the professional list shows names and their timezone", async () => {
   mockApi({ "GET /api/me": () => json(member), "GET /api/professionals": () => json([london]) });
   renderAt("/professionals");
   expect(await screen.findByRole("link", { name: "Dr. Mira Okafor" })).toBeTruthy();
-  expect(screen.getByText(/Europe\/London/)).toBeTruthy();
+  expect(screen.getByText("Works on London time").getAttribute("title")).toMatch(/^Europe\/London · /);
 });
 
 test("a London slot appears under the member's Singapore day", async () => {
@@ -202,9 +202,11 @@ test("a London slot appears under the member's Singapore day", async () => {
     "GET /api/professionals/p1/slots": () => json({ slots: [slot] }),
   });
   renderAt("/professionals/p1");
-  expect(await screen.findByRole("heading", { name: "Tue 5 Jan 2027" })).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "Tuesday 5 January 2027" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Tuesday 5 January 2027, 1 free time" }).getAttribute("aria-pressed")).toBe("true");
   expect(screen.getByRole("link", { name: "00:00–00:50" })).toBeTruthy();
-  expect(screen.getAllByText("Times shown in Asia/Singapore")).toHaveLength(2); // header and page
+  expect(screen.getAllByText("Times shown in Singapore time")).toHaveLength(2); // header and page
+  expect(screen.getByText("Works on London time")).toBeTruthy();
 });
 
 test("when the clocks go back, repeated times get the zone name and the others stay plain", async () => {
@@ -225,6 +227,58 @@ test("when the clocks go back, repeated times get the zone name and the others s
   expect(await screen.findByRole("link", { name: "01:00–01:50 EDT" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "01:00–01:50 EST" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "02:00–02:50" })).toBeTruthy();
+});
+
+// Mon 4 Jan has nothing; Tue 5 Jan has one slot; Thu 7 Jan has two (Singapore days).
+const weekSlots = () =>
+  json({
+    slots: [
+      slot,
+      { startsAt: "2027-01-07T01:00:00.000Z", endsAt: "2027-01-07T01:50:00.000Z" },
+      { startsAt: "2027-01-07T02:00:00.000Z", endsAt: "2027-01-07T02:50:00.000Z" },
+    ],
+  });
+const profileApi = () =>
+  mockApi({
+    "GET /api/me": () => json(member),
+    "GET /api/professionals/p1": () => json(london),
+    "GET /api/professionals/p1/slots": weekSlots,
+  });
+
+test("the calendar starts on the first day with free times", async () => {
+  profileApi();
+  renderAt("/professionals/p1");
+  const first = await screen.findByRole("button", { name: "Tuesday 5 January 2027, 1 free time" });
+  expect(first.getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByRole("button", { name: "Thursday 7 January 2027, 2 free times" }).getAttribute("aria-pressed")).toBe("false");
+  expect(screen.getByRole("heading", { name: "Tuesday 5 January 2027" })).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "09:00–09:50" })).toBeNull();
+});
+
+test("choosing another day shows its times and keeps the day and the reschedule id in the URL", async () => {
+  profileApi();
+  const router = renderAt("/professionals/p1?reschedule=s1");
+  fireEvent.click(await screen.findByRole("button", { name: "Thursday 7 January 2027, 2 free times" }));
+  expect(await screen.findByRole("heading", { name: "Thursday 7 January 2027" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "09:00–09:50" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "10:00–10:50" })).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "00:00–00:50" })).toBeNull();
+  const search = new URLSearchParams(router.state.location.search);
+  expect(search.get("day")).toBe("2027-01-07");
+  expect(search.get("reschedule")).toBe("s1");
+});
+
+test("a day without free times is shown but cannot be chosen", async () => {
+  profileApi();
+  renderAt("/professionals/p1");
+  const monday = (await screen.findByRole("button", { name: "Monday 4 January 2027, no free times" })) as HTMLButtonElement;
+  expect(monday.disabled).toBe(true);
+});
+
+test("the day in the URL is opened directly", async () => {
+  profileApi();
+  renderAt("/professionals/p1?day=2027-01-07");
+  expect(await screen.findByRole("heading", { name: "Thursday 7 January 2027" })).toBeTruthy();
 });
 
 test("no slots shows the empty state", async () => {
@@ -248,7 +302,7 @@ test("confirming shows the member-zone time and books exactly that slot", async 
   renderAt(confirmPath);
   expect(await screen.findByText("Dr. Mira Okafor")).toBeTruthy();
   expect(screen.getByText("Tue 5 Jan 2027")).toBeTruthy();
-  expect(screen.getByText("00:00–00:50 (Asia/Singapore)")).toBeTruthy();
+  expect(screen.getByText("00:00–00:50 (Singapore time)").getAttribute("title")).toMatch(/^Asia\/Singapore · /);
   expect(screen.getByText("50 minutes")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Book session" }));
   expect(await screen.findByText("Booked. You'll get reminders 24 hours and 1 hour before.")).toBeTruthy();

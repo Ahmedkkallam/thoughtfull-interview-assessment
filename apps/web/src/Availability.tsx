@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useOutletContext } from "react-router";
 import { api } from "./api.ts";
 import type { Me } from "./auth.ts";
-import { Button, Callout, Card, CheckIcon, CrossIcon, inputClass, PageHeader, PlusIcon, Skeleton } from "./ui.tsx";
+import { Button, Callout, Card, CheckIcon, CrossIcon, inputClass, PageHeader, PlusIcon, Skeleton, Zone } from "./ui.tsx";
 
 type Range = { start: string; end: string };
 type Hours = { weekday: number; start: string; end: string };
@@ -64,7 +64,14 @@ function WeekForm({ timezone, initial }: { timezone: string; initial: Hours[] })
 
   return (
     <>
-      <PageHeader title="My working hours" subtitle={`Times are in your timezone (${timezone}). Members book sessions inside these hours.`} />
+      <PageHeader
+        title="My working hours"
+        subtitle={
+          <>
+            Members book sessions inside these hours. <Zone prefix="Hours are in " zone={timezone} long />
+          </>
+        }
+      />
       <form
         className="space-y-3"
         onSubmit={(e) => {
@@ -95,7 +102,7 @@ function WeekForm({ timezone, initial }: { timezone: string; initial: Hours[] })
                           <span className="sr-only">{name} range {i + 1}</span>{" "}
                           <span className="capitalize">start</span>
                         </span>
-                        <input type="time" value={r.start} onChange={(e) => change(day, i, "start", e.target.value)} required className={`${inputClass} w-32 tabular-nums`} />
+                        <input type="time" value={r.start} onChange={(e) => change(day, i, "start", e.target.value)} required className={`${inputClass} w-28 tabular-nums sm:w-32`} />
                       </label>
                       <span aria-hidden="true" className="pb-3 text-stone-400">–</span>
                       <label className="flex flex-col gap-1 text-xs font-medium text-stone-600">
@@ -109,7 +116,7 @@ function WeekForm({ timezone, initial }: { timezone: string; initial: Hours[] })
                           onChange={(e) => change(day, i, "end", e.target.value)}
                           required
                           aria-invalid={backwards}
-                          className={`${inputClass} w-32 tabular-nums`}
+                          className={`${inputClass} w-28 tabular-nums sm:w-32`}
                         />
                       </label>
                       <Button variant="ghost" size="sm" className="ml-auto text-stone-600 hover:bg-rose-50 hover:text-rose-700" onClick={() => edit({ ...week, [day]: ranges.filter((_, j) => j !== i) })}>
