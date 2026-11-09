@@ -404,6 +404,16 @@ describe("the database rejects past starts on its own clock", () => {
     );
     expect(triggers.rows.map((r) => r.tgname)).toEqual(["sessions_not_in_past"]);
   });
+
+  it("indexes sessions by member and by professional so listings do not scan the table", async () => {
+    const indexes = await pool.query(
+      "SELECT indexname FROM pg_indexes WHERE tablename = 'sessions' AND indexname LIKE '%\\_starts\\_idx' ORDER BY indexname",
+    );
+    expect(indexes.rows.map((r) => r.indexname)).toEqual([
+      "sessions_member_starts_idx",
+      "sessions_professional_starts_idx",
+    ]);
+  });
 });
 
 describe("my sessions", () => {

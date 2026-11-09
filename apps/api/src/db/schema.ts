@@ -129,6 +129,9 @@ export const sessions = pgTable(
     check("sessions_not_self", sql`${t.memberId} <> ${t.professionalId}`),
     // A cancelled session always records when; a booked one never has a cancel time.
     check("sessions_cancelled_at_matches_status", sql`(${t.status} = 'cancelled') = (${t.cancelledAt} is not null)`),
+    // The overlap indexes only cover booked rows; these serve "my sessions" and the slot lookup.
+    index("sessions_member_starts_idx").on(t.memberId, t.startsAt),
+    index("sessions_professional_starts_idx").on(t.professionalId, t.startsAt),
   ],
 );
 

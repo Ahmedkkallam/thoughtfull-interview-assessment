@@ -64,6 +64,13 @@
       "when": 1794226853374,
       "tag": "0008_time_off_and_notice",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794232675658,
+      "tag": "0009_session_indexes",
+      "breakpoints": true
     }
   ]
 }

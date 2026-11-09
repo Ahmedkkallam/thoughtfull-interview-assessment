@@ -1,0 +1,2 @@
+CREATE INDEX "sessions_member_starts_idx" ON "sessions" USING btree ("member_id","starts_at");--> statement-breakpoint
+CREATE INDEX "sessions_professional_starts_idx" ON "sessions" USING btree ("professional_id","starts_at");
