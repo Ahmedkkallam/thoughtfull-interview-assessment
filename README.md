@@ -99,9 +99,61 @@ This walks through the cross-timezone case.
 7. As Lina, open the **Notifications** page (also in the header). Book a session less than 24 hours ahead and the **Cancel** and **Reschedule** buttons are disabled with "Changes are possible up to 24 hours before the start".
 8. As Mira, cancel a session (she can at any time). Lina's notifications list shows that it was cancelled, and the session appears under Past as "Cancelled by the professional".
 
-Email reminders (on by default, switchable in **Settings**) go only to the local Mailpit inbox at http://localhost:8025, never to real addresses; they say only that a session is coming up and when.
+Email reminders (on by default, switchable in **Settings**) go only to the local Mailpit inbox at http://localhost:8025, never to real addresses; they say only that a session is coming up and when. A sample is in [docs/screenshots/desktop-email.png](docs/screenshots/desktop-email.png).
 
 Reminders appear in the Notifications list when they are due: the 24-hour one 24 hours before the start, the 1-hour one an hour before. A reminder whose time had already passed at booking is not created. The worker checks every 5 seconds and the page refreshes every 30, so allow up to about 35 seconds. To see one without waiting a day, book the soonest free slot: if it starts in 90 minutes, its 1-hour reminder arrives after 30 minutes. A slot that starts in under an hour gets no reminders at all.
+
+## Screenshots and responsive design
+These are taken from the running app with the demo accounts, on a 1440 px desktop window and a 390 px phone.
+
+**Log in**
+
+| Desktop | Phone |
+| --- | --- |
+| <img src="docs/screenshots/desktop-login.png" alt="Log in, desktop" width="520"> | <img src="docs/screenshots/phone-login.png" alt="Log in, phone" width="200"> |
+
+**Member home (Lina, Singapore time)**
+
+| Desktop | Phone |
+| --- | --- |
+| <img src="docs/screenshots/desktop-dashboard.png" alt="Member home (Lina, Singapore time), desktop" width="520"> | <img src="docs/screenshots/phone-dashboard.png" alt="Member home (Lina, Singapore time), phone" width="200"> |
+
+**Booking page with a time chosen (Dr. Mira Okafor)**
+
+| Desktop | Phone |
+| --- | --- |
+| <img src="docs/screenshots/desktop-booking.png" alt="Booking page with a time chosen (Dr. Mira Okafor), desktop" width="520"> | <img src="docs/screenshots/phone-booking.png" alt="Booking page with a time chosen (Dr. Mira Okafor), phone" width="200"> |
+
+**My sessions**
+
+| Desktop | Phone |
+| --- | --- |
+| <img src="docs/screenshots/desktop-sessions.png" alt="My sessions, desktop" width="520"> | <img src="docs/screenshots/phone-sessions.png" alt="My sessions, phone" width="200"> |
+
+**Working hours, Monday open (Dr. Mira Okafor, London time)**
+
+| Desktop | Phone |
+| --- | --- |
+| <img src="docs/screenshots/desktop-availability.png" alt="Working hours, Monday open (Dr. Mira Okafor, London time), desktop" width="520"> | <img src="docs/screenshots/phone-availability.png" alt="Working hours, Monday open (Dr. Mira Okafor, London time), phone" width="200"> |
+
+**Settings (phone)**
+
+<img src="docs/screenshots/phone-settings.png" alt="Settings, phone" width="200">
+
+**Reminder email (local Mailpit inbox)**
+
+| Desktop | Phone |
+| --- | --- |
+| <img src="docs/screenshots/desktop-email.png" alt="Reminder email (local Mailpit inbox), desktop" width="520"> | <img src="docs/screenshots/phone-email.png" alt="Reminder email (local Mailpit inbox), phone" width="200"> |
+
+How the layout adapts:
+- The sidebar on desktop becomes a bottom tab bar on a phone, so the main actions stay within thumb reach.
+- The booking summary panel beside the calendar becomes a sticky bar at the bottom with the chosen time and the Continue button.
+- The week calendar keeps all 7 days on a 375 px phone; the day buttons just get narrower.
+- In the working-hours accordion each day's summary moves under its name and the start and end inputs shrink to share one row, so a day still fits on a 375 px screen.
+- I checked that nothing scrolls sideways at 375 px.
+- Soft motion (fades) is switched off for people who ask their device for reduced motion.
+- Times are always shown in the viewer's own timezone, and the zone is named on the page.
 
 ## More
 - [DECISIONS.md](DECISIONS.md): decisions and trade-offs, how double-booking is prevented, how reminders are delivered exactly once, timezones and daylight saving, assumptions, limitations, what I would change for a healthcare product.
